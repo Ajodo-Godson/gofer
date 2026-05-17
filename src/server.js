@@ -8,7 +8,8 @@ import { getAgentSnapshots, startAgents, stopAgents } from "./agents/manager.js"
 import { isBrowserUseDemoRunning, startBrowserUseDemo } from "./lib/browserUseDemo.js";
 import { startDemoRun, startManualRun } from "./lib/orchestrator.js";
 import { importTasksFromSource } from "./lib/taskSource.js";
-import { addChatMessage, bus, emit, getState, loadSeedData, replaceSourceTasks } from "./lib/store.js";
+import { saveMemory } from "./integrations/memory.js";
+import { addChatMessage, bus, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks } from "./lib/store.js";
 import { appointmentVoiceReply, summarizeCallState } from "./lib/voiceController.js";
 
 const root = process.cwd();
@@ -208,8 +209,9 @@ async function handleUserChat(message) {
   const activeRun = state.runs[0];
   const task = activeRun?.tasks?.[0];
   const approval = latestApprovalArtifact(task);
+  const authHandoff = latestAuthHandoff(task);
 
-  if (!task || !approval) {
+  if (!task || (!approval && !authHandoff)) {
     const reply = "I do not have a pending approval gate right now. Dispatch an errand first, then reply here to approve, change, or continue it.";
     addChatMessage("assistant", reply);
     return reply;
@@ -220,6 +222,10 @@ async function handleUserChat(message) {
     addChatMessage("assistant", reply, { runId: activeRun.id, taskId: task.id, action: "approval_declined" });
     emit("approval.declined", { runId: activeRun.id, taskId: task.id, message });
     return reply;
+  }
+
+  if (authHandoff) {
+    return handleAuthChat({ message, activeRun, task, authHandoff });
   }
 
   const selected = selectCandidateFromMessage(task, message);
@@ -245,6 +251,59 @@ async function handleUserChat(message) {
   return reply;
 }
 
+async function handleAuthChat({ message, activeRun, task, authHandoff }) {
+  const hasProfile = Boolean(config.browserUse.profileId);
+  const userApprovedProfile = isAffirmative(message) || /use.*profile|profile.*ok|approve.*profile|i synced|synced|signed in|done|rerun|try again/i.test(message);
+
+  if (!hasProfile) {
+    const reply = authHandoff.liveUrl
+      ? "This workflow needs authentication. Open the debug browser session and complete the login/OAuth step there. For reliable reruns, sync that browser state into a Browser Use profile, set `BROWSER_USE_PROFILE_ID`, restart GOFER, then reply `approve profile`. GOFER will store that task-specific permission in memory before using it."
+      : "This workflow needs a synced Browser Use profile. Sync/login through Browser Use, set `BROWSER_USE_PROFILE_ID`, restart GOFER, then reply `approve profile`. GOFER will store that task-specific permission in memory before using it.";
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "auth_profile_required",
+      liveUrl: authHandoff.liveUrl || null
+    });
+    emit("auth.required", { runId: activeRun.id, taskId: task.id, liveUrl: authHandoff.liveUrl || null });
+    return reply;
+  }
+
+  if (!userApprovedProfile) {
+    const reply = "This step can use your synced Browser Use profile to continue through the login/OAuth boundary. Reply `approve profile` to allow GOFER to use that profile for this task, or `no` to stop.";
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "profile_permission_requested"
+    });
+    emit("profile.permission_requested", { runId: activeRun.id, taskId: task.id });
+    return reply;
+  }
+
+  const memory = rememberBrowserProfileApproval({
+    taskTitle: task.title,
+    runId: activeRun.id,
+    taskId: task.id
+  });
+  saveMemory({ content: memory.content }).catch((error) => {
+    emit("memory.save_failed", { error: error.message, source: "browser_profile_permission" });
+  });
+
+  const followup = buildAuthenticatedFollowupTask(task, authHandoff);
+  const reply = "Approved. I will use the synced Browser Use profile for this task and rerun the authenticated browser step. I will still stop before payment, final booking, account creation, or final submission.";
+  addChatMessage("assistant", reply, {
+    runId: activeRun.id,
+    taskId: task.id,
+    action: "profile_permission_accepted",
+    followup
+  });
+  emit("profile.permission_accepted", { runId: activeRun.id, taskId: task.id, followup });
+  startManualRun(followup).catch((error) => {
+    emit("run.error", { error: error.message });
+  });
+  return reply;
+}
+
 function latestApprovalArtifact(task) {
   if (!task) return null;
   const artifact = [...(task.artifacts || [])].reverse().find((item) => item.kind === "approval");
@@ -253,6 +312,33 @@ function latestApprovalArtifact(task) {
     artifact,
     recommendation: parseRecommendation(artifact.detail)
   };
+}
+
+function latestAuthHandoff(task) {
+  if (!task) return null;
+  for (const artifact of [...(task.artifacts || [])].reverse()) {
+    const parsed = parseJsonMaybe(artifact.output);
+    const liveUrl = artifact.liveUrl || artifact.live_url || null;
+    if (artifact.actionRequired?.type === "auth") {
+      return {
+        artifact,
+        liveUrl,
+        message: artifact.actionRequired.message,
+        blocker: artifact.actionRequired.blocker,
+        parsed
+      };
+    }
+    if (parsed?.auth_required === true || /oauth|login|sign in|authentication|browser use profile|persistent profile/i.test(`${parsed?.blocker || ""} ${parsed?.user_instruction || ""} ${artifact.detail || ""}`)) {
+      return {
+        artifact,
+        liveUrl,
+        message: parsed?.user_instruction || artifact.detail || "Authentication is required.",
+        blocker: parsed?.blocker || null,
+        parsed
+      };
+    }
+  }
+  return null;
 }
 
 function parseRecommendation(detail) {
@@ -276,6 +362,22 @@ function buildFollowupTask(task, selected) {
     return `Verify live availability and prepare booking for ${selected} for this request: ${task.title}. Do not finalize the booking or submit payment without approval.`;
   }
   return `Continue this approved GOFER task for ${selected}: ${task.title}. Stop before any irreversible action.`;
+}
+
+function buildAuthenticatedFollowupTask(task, authHandoff) {
+  if (task.type === "browser_test" && /doordash/i.test(task.title)) {
+    return "Build a DoorDash cart using the approved synced Browser Use profile. Stop at cart or checkout review before payment or order submission.";
+  }
+  if (task.type === "purchase") {
+    return `Continue authenticated checkout preparation for this task using the approved synced Browser Use profile: ${task.title}. Stop before payment or final order submission.`;
+  }
+  if (task.type === "billing_dispute") {
+    return `Continue authenticated billing dispute preparation for this task using the approved synced Browser Use profile: ${task.title}. Stop before final dispute submission.`;
+  }
+  if (task.type === "restaurant_reservation") {
+    return `Continue authenticated reservation availability check for this task using the approved synced Browser Use profile: ${task.title}. Stop before final booking, deposit, or payment.`;
+  }
+  return `Continue this authenticated GOFER browser task using the approved synced Browser Use profile: ${task.title}. Stop before any irreversible action. Prior blocker: ${authHandoff.blocker || authHandoff.message || "authentication required"}.`;
 }
 
 function isAffirmative(message) {

@@ -194,7 +194,7 @@ function renderRun() {
   }
 
   els.runStatus.textContent = run.status;
-  els.runStatus.className = `badge ${run.status === "running" ? "running" : ""}`;
+  els.runStatus.className = `badge ${escapeHtml(run.status)}`;
   els.runDemo.disabled = run.status === "running";
   els.runDemo.textContent = run.status === "running" ? "Agents running..." : "Run GOFER demo";
   els.manualTaskSubmit.disabled = run.status === "running";
@@ -273,10 +273,14 @@ function renderArtifactOutput(output) {
 }
 
 function renderActionRequired(action) {
+  const authHint = action.type === "auth"
+    ? `<br>Chat: reply <strong>approve profile</strong> after syncing a Browser Use profile, or complete OAuth in the debug session if one is available.`
+    : "";
   return `
     <div class="warning">
       Action required: ${escapeHtml(action.message || "User authentication is required.")}
       ${action.blocker ? `<br>Blocker: ${escapeHtml(action.blocker)}` : ""}
+      ${authHint}
     </div>
   `;
 }

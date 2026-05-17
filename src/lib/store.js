@@ -94,11 +94,16 @@ export function completeSeedTask(sourceId, result) {
   emit("notion.updated", { tasks: state.tasks });
 }
 
-export function addMemory(content, type = "task") {
-  const memory = { type, content, at: new Date().toISOString() };
+export function addMemory(content, type = "task", metadata = {}) {
+  const memory = { type, content, metadata, at: new Date().toISOString() };
   state.memory.push(memory);
   emit("memory.added", { memory });
   return memory;
+}
+
+export function rememberBrowserProfileApproval({ taskTitle, runId, taskId }) {
+  const content = `User approved using the synced Browser Use profile for: ${taskTitle}`;
+  return addMemory(content, "browser_profile_permission", { runId, taskId });
 }
 
 export function addChatMessage(role, content, metadata = {}) {
