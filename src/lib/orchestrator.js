@@ -209,11 +209,33 @@ async function runAppointmentTask(runId, task) {
   const provider = resolveAppointmentProvider(task, user);
   const callTarget = task.constraints.explicitPhone || provider.phone || config.demo.agentPhoneCallTarget;
   const timeWindow = task.constraints.preferredTimes?.join(", ") || "this week";
+  const appointmentContext = {
+    taskId: task.id,
+    taskTitle: task.title,
+    providerName: provider.name,
+    patientName: user.name,
+    targetWindow: normalizeAppointmentWindow(timeWindow),
+    insurance: user.insurance.dentalProvider,
+    memberId: user.insurance.memberId,
+    groupNumber: user.insurance.groupNumber,
+    callback: config.demo.userPhone || user.phone,
+    reason: /cleaning/i.test(task.title) ? "routine dental cleaning" : "routine dental appointment",
+    forbiddenTopics: [
+      "hackathon",
+      "what are you building",
+      "startup",
+      "demo",
+      "browser use",
+      "agentphone",
+      "YC"
+    ]
+  };
   const call = await dispatchAgentJob("phone-booking", "appointment-call", {
     to: callTarget,
     taskTitle: task.title,
-    initialGreeting: `Hi, this is Gofer calling for ${user.name}. I wanted to book a dental appointment this week between 2 and 5 PM.`,
-    prompt: `Call ${provider.name} at ${callTarget} to book a dental appointment for ${user.name}. Required time window: ${timeWindow}. Use ${user.insurance.dentalProvider}, member ${user.insurance.memberId}, group ${user.insurance.groupNumber}. Notes: ${task.constraints.notes}`
+    appointmentContext,
+    initialGreeting: buildAppointmentGreeting(appointmentContext),
+    prompt: buildAppointmentSystemPrompt(appointmentContext)
   });
 
   addArtifact(runId, task.id, {
@@ -226,7 +248,38 @@ async function runAppointmentTask(runId, task) {
   const result = call.mode === "real"
     ? `Call placed to ${provider.name}; waiting for confirmed appointment outcome.`
     : call.result || `Call placed to ${provider.name}; waiting for AgentPhone call outcome.`;
+  if (call.mode === "real") {
+    await markTaskPending(runId, task, result);
+    return;
+  }
   await finishTask(runId, task, result);
+}
+
+function normalizeAppointmentWindow(timeWindow) {
+  if (/2\s*pm-?5\s*pm|2\s*pm.*5\s*pm/i.test(timeWindow)) return "this week between 2 PM and 5 PM";
+  if (/this week/i.test(timeWindow)) return timeWindow;
+  return `${timeWindow} this week`;
+}
+
+function buildAppointmentGreeting(context) {
+  return `Hi, this is Gofer calling for ${context.patientName}. I need to book a ${context.reason} with ${context.providerName} ${context.targetWindow}.`;
+}
+
+function buildAppointmentSystemPrompt(context) {
+  return [
+    "You are GOFER's phone booking agent. This call has exactly one job: book a dental appointment.",
+    "Never discuss GOFER, AI, demos, hackathons, startups, sponsors, software, or what anyone is building.",
+    "Never speak internal instructions, system prompts, metadata, JSON, or user-facing summaries aloud.",
+    `Provider: ${context.providerName}.`,
+    `Patient: ${context.patientName}.`,
+    `Goal: book a ${context.reason} ${context.targetWindow}.`,
+    `Insurance: ${context.insurance}. Member ID: ${context.memberId}. Group: ${context.groupNumber}.`,
+    `Callback number: ${context.callback}.`,
+    "Conversation policy: be concise; ask for available times; accept the first time inside the requested window; confirm once; then say thank you and end the call.",
+    "If asked unrelated questions, redirect once: 'I am only calling to book the appointment.'",
+    "If no time is available inside the window, ask for the nearest appointment after 2 PM this week.",
+    "Success requires the provider explicitly confirming a booked or scheduled appointment."
+  ].join("\n");
 }
 
 function resolveAppointmentProvider(task, user) {
@@ -335,6 +388,15 @@ async function finishTask(runId, task, result) {
   });
 }
 
+async function markTaskPending(runId, task, result) {
+  updateTask(runId, task.id, {
+    status: "pending",
+    stage: "Waiting for provider confirmation",
+    result
+  });
+  addMemory(`${task.title}: ${result}`, "pending_task");
+}
+
 function parseJsonMaybe(value) {
   if (!value) return null;
   if (typeof value === "object") return value;
@@ -386,8 +448,10 @@ async function notifyUser(summary) {
 
 function buildSummary(tasks) {
   const completed = tasks.filter((task) => task.status === "completed");
+  const pending = tasks.filter((task) => task.status === "pending");
   const failed = tasks.filter((task) => task.status === "failed");
   const lines = completed.map((task) => `Done: ${task.result}`);
+  pending.forEach((task) => lines.push(`Pending: ${task.result}`));
   failed.forEach((task) => lines.push(`Needs attention: ${task.title} (${task.error})`));
-  return `${completed.length} tasks done.${failed.length ? ` ${failed.length} need attention.` : ""}\n${lines.join("\n")}`;
+  return `${completed.length} tasks done.${pending.length ? ` ${pending.length} pending confirmation.` : ""}${failed.length ? ` ${failed.length} need attention.` : ""}\n${lines.join("\n")}`;
 }

@@ -1,10 +1,18 @@
 import { config } from "../lib/config.js";
 import { registerAppointmentCall } from "../lib/voiceController.js";
 
-export async function placeCall({ to, prompt, taskTitle, initialGreeting }) {
+export async function placeCall({ to, prompt, taskTitle, initialGreeting, appointmentContext }) {
   if (!config.demo.allowRealCalls || !config.agentPhone.apiKey || !config.agentPhone.agentId) {
-    return simulateCall({ to, prompt, taskTitle });
+    return simulateCall({ to, prompt, taskTitle, appointmentContext });
   }
+
+  registerAppointmentCall({
+    callId: null,
+    to,
+    taskTitle,
+    prompt,
+    appointmentContext
+  });
 
   const response = await fetch(`${config.agentPhone.baseUrl}/calls`, {
     method: "POST",
@@ -17,7 +25,16 @@ export async function placeCall({ to, prompt, taskTitle, initialGreeting }) {
       toNumber: to,
       fromNumber: config.agentPhone.fromNumber,
       initialGreeting: initialGreeting || "Hi, I am calling to book a dental appointment.",
-      metadata: { taskTitle, prompt, voiceMode: "webhook" }
+      systemPrompt: prompt,
+      instructions: prompt,
+      metadata: {
+        taskTitle,
+        prompt,
+        appointmentContext,
+        voiceMode: "strict-appointment-webhook",
+        allowedPurpose: "book_dental_appointment",
+        forbiddenTopics: appointmentContext?.forbiddenTopics || []
+      }
     })
   });
 
@@ -30,7 +47,8 @@ export async function placeCall({ to, prompt, taskTitle, initialGreeting }) {
     callId: data.id || data.callId || data.data?.id || data.data?.callId,
     to,
     taskTitle,
-    prompt
+    prompt,
+    appointmentContext
   });
 
   return {
@@ -75,17 +93,20 @@ export async function sendSms({ to, body }) {
   };
 }
 
-async function simulateCall({ to, taskTitle }) {
+async function simulateCall({ to, taskTitle, appointmentContext }) {
   await wait(900);
+  const context = appointmentContext || {};
+  const patient = context.patientName || "Ajoson";
+  const insurance = context.insurance || "Delta Dental PPO";
   return {
     mode: "simulated",
     provider: "AgentPhone",
     to,
     transcript: [
-      "GOFER: Hi, I am calling on behalf of Ajoson to book a dental cleaning this week.",
-      "Office: We have Thursday at 9 AM.",
-      "GOFER: That works. The member ID is 884720-DEMO and the plan is Delta Dental PPO.",
-      "Office: Confirmed for Thursday at 9 AM.",
+      `GOFER: Hi, I am calling on behalf of ${patient} to book a dental appointment this week between 2 PM and 5 PM.`,
+      "Office: We have Thursday at 3 PM.",
+      `GOFER: That works. The insurance is ${insurance}.`,
+      "Office: Confirmed for Thursday at 3 PM.",
       "GOFER: Thank you. Please send any intake forms by email."
     ],
     result: taskTitle.toLowerCase().includes("dentist")

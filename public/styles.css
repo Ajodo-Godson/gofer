@@ -265,6 +265,11 @@ h3 {
   background: var(--green);
 }
 
+.status.pending {
+  color: #171003;
+  background: var(--amber);
+}
+
 .status.failed {
   color: #160707;
   background: var(--red);
