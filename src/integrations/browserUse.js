@@ -1,12 +1,12 @@
 import { config } from "../lib/config.js";
 
-export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema, model }, options = {}) {
+export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema, model, sensitiveData }, options = {}) {
   if (!config.demo.allowBrowserUseLiveTask || !config.browserUse.apiKey) {
     return simulateBrowserTask({ task, metadata });
   }
 
   try {
-    const response = await createBrowserUseTask({ task, metadata, maxCostUsd, outputSchema, model });
+    const response = await createBrowserUseTask({ task, metadata, maxCostUsd, outputSchema, model, sensitiveData });
 
     if (!response.ok) {
       return {
@@ -167,6 +167,15 @@ export async function runDoorDashCartDemo(options = {}) {
 
 export async function runPatientPortalDemo(options = {}) {
   const portalUrl = browserReachablePortalUrl();
+  // Patient identifiers and insurance numbers go through Browser Use's
+  // sensitiveData channel: the LLM only sees the *keys* (e.g. "member_id")
+  // and inserts <secret>member_id</secret> placeholders into the form;
+  // Browser Use fills the real value at the browser layer. Plaintext values
+  // never appear in prompts, transcripts, or recordings.
+  const sensitiveData = {
+    member_id: "884720-DEMO",
+    group_number: "YC-HACK-26"
+  };
   return runBrowserTask({
     task: [
       `Open ${portalUrl}.`,
@@ -175,12 +184,14 @@ export async function runPatientPortalDemo(options = {}) {
       "Preferred day: Wednesday.",
       "Preferred time: 3:00 PM.",
       "Insurance provider: Delta Dental PPO.",
-      "Member ID: 884720-DEMO.",
+      "Member ID: <secret>member_id</secret>.",
+      "Group number: <secret>group_number</secret>.",
       "Notes: Please confirm any available appointment this week between 2 PM and 5 PM.",
       "Submit the appointment request.",
-      "Return the confirmation title and reference number."
+      "Return the confirmation title and reference number. Do not echo the member ID or group number in the output; reference them as 'on file' if needed."
     ].join(" "),
     maxCostUsd: 0.5,
+    sensitiveData,
     metadata: { capability: "patient-portal-form", url: portalUrl }
   }, options);
 }
@@ -243,7 +254,7 @@ async function pollBrowserUseSession(sessionId, options = {}) {
   };
 }
 
-async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputSchema, model = "claude-sonnet-4.6" }) {
+async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputSchema, model = "claude-sonnet-4.6", sensitiveData }) {
   const v3BaseUrl = browserUseApiOrigin();
   const body = {
     task,
@@ -265,6 +276,9 @@ async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputS
   }
   if (config.browserUse.profileId) {
     body.profileId = config.browserUse.profileId;
+  }
+  if (sensitiveData && Object.keys(sensitiveData).length > 0) {
+    body.sensitiveData = sensitiveData;
   }
 
   const response = await fetch(`${v3BaseUrl}/api/v3/sessions`, {
