@@ -1,0 +1,37 @@
+{
+  "userId": "demo-user",
+  "name": "Ajoson",
+  "phone": "+14155550123",
+  "email": "ajoson@example.com",
+  "address": "680 Folsom St, San Francisco, CA",
+  "zip": "94107",
+  "preferences": {
+    "appointmentTimes": ["morning", "early afternoon"],
+    "avoid": ["Monday before 10am"],
+    "flowers": "peonies",
+    "communication": "sms"
+  },
+  "insurance": {
+    "dentalProvider": "Delta Dental PPO",
+    "memberId": "884720-DEMO",
+    "groupNumber": "YC-HACK-26"
+  },
+  "savedProviders": {
+    "dentist": {
+      "name": "Dr. Park Dental",
+      "phone": "+14155550199",
+      "portal": "https://example.com/patient-portal",
+      "notes": "In network, 0.3 miles from SoMa"
+    },
+    "drCarl": {
+      "name": "Dr. Carl",
+      "phone": "+16284887063",
+      "portal": null,
+      "notes": "Phone-only dental provider. No website."
+    }
+  },
+  "spendingPolicy": {
+    "autoApproveUnder": 75,
+    "monthlyBudget": 200
+  }
+}

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dr. Carl Dental Portal</title>
+    <link rel="stylesheet" href="/demo/portal.css" />
+  </head>
+  <body>
+    <main class="portal">
+      <section class="hero">
+        <p class="eyebrow">Dr. Carl Dental</p>
+        <h1>Patient Appointment Portal</h1>
+        <p>Submit appointment requests for routine dental visits. Afternoon slots are prioritized this week.</p>
+      </section>
+
+      <form class="form" action="/demo/portal-confirmation.html" method="get">
+        <label>
+          Patient name
+          <input name="patient" value="" placeholder="Full name" required />
+        </label>
+
+        <label>
+          Appointment type
+          <select name="type" required>
+            <option value="">Select one</option>
+            <option>Routine dental appointment</option>
+            <option>Cleaning</option>
+            <option>Consultation</option>
+          </select>
+        </label>
+
+        <label>
+          Preferred day
+          <select name="day" required>
+            <option value="">Select one</option>
+            <option>Monday</option>
+            <option>Tuesday</option>
+            <option>Wednesday</option>
+            <option>Thursday</option>
+            <option>Friday</option>
+          </select>
+        </label>
+
+        <label>
+          Preferred time
+          <select name="time" required>
+            <option value="">Select one</option>
+            <option>2:00 PM</option>
+            <option>3:00 PM</option>
+            <option>4:00 PM</option>
+            <option>5:00 PM</option>
+          </select>
+        </label>
+
+        <label>
+          Insurance provider
+          <input name="insurance" placeholder="Insurance provider" required />
+        </label>
+
+        <label>
+          Member ID
+          <input name="member" placeholder="Member ID" required />
+        </label>
+
+        <label>
+          Notes for office
+          <textarea name="notes" placeholder="Anything the office should know"></textarea>
+        </label>
+
+        <button type="submit">Submit appointment request</button>
+      </form>
+    </main>
+  </body>
+</html>

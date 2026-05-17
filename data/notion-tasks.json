@@ -1,0 +1,30 @@
+[
+  {
+    "id": "notion-1",
+    "title": "Book dentist cleaning this week",
+    "source": "Notion",
+    "status": "todo",
+    "notes": "Prefer morning. Use dental insurance."
+  },
+  {
+    "id": "notion-2",
+    "title": "Dispute $47 PG&E overcharge",
+    "source": "Notion",
+    "status": "todo",
+    "notes": "Billing period April 2026. Charge appears duplicated."
+  },
+  {
+    "id": "notion-3",
+    "title": "Order flowers for Mom's birthday on June 5",
+    "source": "Notion",
+    "status": "todo",
+    "notes": "She likes peonies. Delivery June 4."
+  },
+  {
+    "id": "notion-4",
+    "title": "Call Dr. Carl to book a dental appointment this week",
+    "source": "Notion",
+    "status": "todo",
+    "notes": "Phone-only provider at +1 628 488 7063. Book any day this week between 2pm and 5pm."
+  }
+]

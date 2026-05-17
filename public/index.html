@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GOFER Mission Control</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">GOFER</p>
+          <h1>Autonomous errand agents</h1>
+        </div>
+        <div class="actions">
+          <button id="runDemo" class="primary">Run GOFER demo</button>
+          <button id="testBrowserPortal" class="secondary">Run Patient Portal</button>
+          <button id="testBrowserUse" class="secondary">Run DoorDash Cart</button>
+        </div>
+      </header>
+
+      <section class="panel manual-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Reusable Workflows</p>
+            <h2>Dispatch Any Errand</h2>
+          </div>
+        </div>
+        <form id="manualTaskForm" class="manual-task-form">
+          <input
+            id="manualTaskInput"
+            type="text"
+            value="Find and book Chinese restaurant near 560 20th St in San Francisco for 3 people tonight around 5:30pm, not too expensive, good for a team dinner."
+            aria-label="Manual GOFER task"
+          />
+          <button id="manualTaskSubmit" class="primary" type="submit">Dispatch</button>
+        </form>
+      </section>
+
+      <section class="grid">
+        <section class="panel hero-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Source Of Truth</p>
+              <h2>Notion Tasks</h2>
+            </div>
+            <span id="runStatus" class="badge">Idle</span>
+          </div>
+          <div id="notionTasks" class="task-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Sponsor Stack</p>
+              <h2>Integrations</h2>
+            </div>
+          </div>
+          <div id="integrations" class="integration-grid"></div>
+          <div id="checklist" class="checklist"></div>
+        </section>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Parallel Execution</p>
+            <h2>Agent Lanes</h2>
+          </div>
+        </div>
+        <div id="agentLanes" class="lanes empty">
+          <div class="empty-state">Run the demo to dispatch browser, phone, payment, and email work in parallel.</div>
+        </div>
+      </section>
+
+      <section class="panel agent-process-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Persistent Workers</p>
+            <h2>Agent Processes</h2>
+          </div>
+        </div>
+        <div id="agentProcesses" class="agent-processes"></div>
+      </section>
+
+      <section class="grid bottom-grid">
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Durable Context</p>
+              <h2>Memory</h2>
+            </div>
+          </div>
+          <div id="memory" class="memory-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Live Feed</p>
+              <h2>Events</h2>
+            </div>
+          </div>
+          <div id="events" class="event-feed"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
