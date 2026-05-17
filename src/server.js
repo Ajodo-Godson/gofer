@@ -257,8 +257,8 @@ async function handleAuthChat({ message, activeRun, task, authHandoff }) {
 
   if (!hasProfile) {
     const reply = authHandoff.liveUrl
-      ? "This workflow needs authentication. Open the debug browser session and complete the login/OAuth step there. For reliable reruns, sync that browser state into a Browser Use profile, set `BROWSER_USE_PROFILE_ID`, restart GOFER, then reply `approve profile`. GOFER will store that task-specific permission in memory before using it."
-      : "This workflow needs a synced Browser Use profile. Sync/login through Browser Use, set `BROWSER_USE_PROFILE_ID`, restart GOFER, then reply `approve profile`. GOFER will store that task-specific permission in memory before using it.";
+      ? "You only need to sync a Browser Use profile once. This running GOFER process does not currently see `BROWSER_USE_PROFILE_ID`, so it cannot use a synced profile yet. Complete OAuth in the debug browser if one is available, or set `BROWSER_USE_PROFILE_ID` in `.env` and restart GOFER once. After that, reply `approve profile` for this task."
+      : "You only need to sync a Browser Use profile once. This running GOFER process does not currently see `BROWSER_USE_PROFILE_ID`, so set it in `.env` and restart GOFER once. After that, reply `approve profile` for this task.";
     addChatMessage("assistant", reply, {
       runId: activeRun.id,
       taskId: task.id,
@@ -270,7 +270,7 @@ async function handleAuthChat({ message, activeRun, task, authHandoff }) {
   }
 
   if (!userApprovedProfile) {
-    const reply = "This step can use your synced Browser Use profile to continue through the login/OAuth boundary. Reply `approve profile` to allow GOFER to use that profile for this task, or `no` to stop.";
+    const reply = "A synced Browser Use profile is already configured. GOFER will not ask you to sync again. Reply `approve profile` to let GOFER use it for this task, or `no` to stop.";
     addChatMessage("assistant", reply, {
       runId: activeRun.id,
       taskId: task.id,

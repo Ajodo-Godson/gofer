@@ -74,7 +74,9 @@ export function setupChecklist() {
         !config.demo.allowBrowserUseLiveTask && "ALLOW_BROWSER_USE_LIVE_TASK=true"
       ].filter(Boolean),
       notes: [
-        !config.browserUse.profileId && "DoorDash checkout demo needs BROWSER_USE_PROFILE_ID for fast authenticated browsing."
+        config.browserUse.profileId
+          ? "Browser Use profile configured; approve profile use per task in chat."
+          : "DoorDash/OAuth-style tasks need one synced BROWSER_USE_PROFILE_ID for fast authenticated browsing."
       ].filter(Boolean)
     },
     agentMail: {

@@ -274,7 +274,7 @@ function renderArtifactOutput(output) {
 
 function renderActionRequired(action) {
   const authHint = action.type === "auth"
-    ? `<br>Chat: reply <strong>approve profile</strong> after syncing a Browser Use profile, or complete OAuth in the debug session if one is available.`
+    ? `<br>Chat: if a Browser Use profile is already synced, reply <strong>approve profile</strong>. If not, sync once and restart GOFER.`
     : "";
   return `
     <div class="warning">
