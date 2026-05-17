@@ -112,15 +112,16 @@ Verification:
 
 ## Sponge
 
-Current state: GOFER has a payment-agent placeholder for wallet charges.
+Current state: `chargeAgentWallet` in `src/integrations/payments.js` is default-deny. Without a Sponge API key it returns `success: false, status: "not_charged"`. With a key it returns `mode: "blocked"` because the SDK adapter is not implemented. The live purchase workflow no longer calls the wallet directly — it routes through `browser.purchase_until_checkout`, which stops at checkout and emits `approval_required: true` instead.
 
 To do:
 
-- [ ] Replace placeholder wallet charge behavior with real Sponge SDK/API calls.
+- [ ] Replace placeholder wallet charge behavior with real Sponge SDK/API calls (the only path that still returns `mode: "blocked"`).
 - [ ] Add balance check before any payment-prep step.
 - [ ] Add payment authorization artifacts: amount, merchant, purpose, wallet/card ID, status, and receipt/transaction hash if available.
-- [ ] Add approval gate before spending money unless under explicit policy.
+- [x] Add approval gate before spending money unless under explicit policy. (Enforced in two layers: the workflow template returns `approval_required` and pauses the task; `chargeAgentWallet` itself is default-deny.)
 - [ ] Add failed-payment handling and do not continue checkout if payment prep fails.
+- [ ] Remove or rewrite `src/lib/move.js`. It is currently unimported but still calls `wallet-charge` and writes a "$X authorization prepared" artifact regardless of whether `payment.success` is true. If it is ever re-imported, it would misreport blocked payments as authorized.
 
 Verification:
 
@@ -157,7 +158,7 @@ To do:
 - [ ] Add per-agent memory scope read/write rules.
 - [ ] Add durable job history persisted to disk or database, not only in-memory runtime state.
 - [ ] Add cancellation and pause/resume for long-running workflows.
-- [ ] Add user approval endpoint that resumes the workflow after approval.
+- [x] Add user approval endpoint that resumes the workflow after approval. (Implemented as a chat-based flow: `POST /api/chat` accepts the user's reply and the orchestrator transitions tasks out of `pending`. A button-based approval endpoint is intentionally not added so there is one source of approval truth.)
 - [ ] Add error taxonomy shared across all agents.
 
 Verification:
