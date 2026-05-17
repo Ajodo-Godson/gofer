@@ -41,7 +41,8 @@ function inferConstraints(raw, user) {
     notes: raw.notes || "",
     providerHint: /carl/i.test(text) ? "drCarl" : null,
     explicitPhone: extractPhone(text),
-    showBrowser: /see what (you|it).*(seeing|doing)|watch|show.*browser|live browser/i.test(text)
+    showBrowser: /see what (you|it).*(seeing|doing)|watch|show.*browser|live browser/i.test(text),
+    recordSession: /\brecord (this|the session|it)|save (the )?(session )?(recording|video)|record session\b/i.test(text)
   };
 }
 

@@ -118,6 +118,13 @@ async function runWorkflowTemplateTask(runId, task) {
 
   if (template.browserCapability) {
     updateTask(runId, task.id, { stage: "BrowserReconAgent gathering options" });
+    // Recording is opt-in per workflow or per task. Default off because
+    // recordings cost money + bandwidth, add ~15s latency, and capture the
+    // literal browser view (which can leak fields that sensitiveData was
+    // designed to hide). A template sets `record: true` when its blast
+    // radius warrants an audit trail; a user can override via
+    // task.constraints.recordSession.
+    const recordSession = Boolean(template.record === true || task.constraints?.recordSession === true);
     const browser = await dispatchAgentJob("browser-recon", "browser-task", {
       task: buildBrowserPrompt(template, task, user),
       metadata: {
@@ -130,7 +137,8 @@ async function runWorkflowTemplateTask(runId, task) {
       },
       maxCostUsd: template.maxCostUsd || 0.6,
       model: template.model || "gemini-3-flash",
-      outputSchema: template.outputSchema || undefined
+      outputSchema: template.outputSchema || undefined,
+      enableRecording: recordSession
     });
 
     addArtifact(runId, task.id, {
@@ -142,6 +150,22 @@ async function runWorkflowTemplateTask(runId, task) {
       actionRequired: browser.actionRequired || null,
       warning: browser.warning || null
     });
+
+    if (Array.isArray(browser.recordingUrls) && browser.recordingUrls.length > 0) {
+      addArtifact(runId, task.id, {
+        kind: "recording",
+        title: "Session recording",
+        detail: "Browser Use captured an MP4 of this session. Presigned URL expires within 1 hour.",
+        recordingUrls: browser.recordingUrls,
+        sessionId: browser.sessionId || null
+      });
+    } else if (browser.recordingSkippedReason) {
+      addArtifact(runId, task.id, {
+        kind: "recording",
+        title: "Session recording skipped",
+        detail: browser.recordingSkippedReason
+      });
+    }
 
     if (template.type === "restaurant_reservation" && hasUsableReservationOutput(browser)) {
       await runRestaurantReservationFollowup(runId, task, browser);

@@ -233,6 +233,9 @@ function renderLane(task) {
 function renderArtifact(artifact) {
   const liveUrl = normalizeLiveUrl(artifact.liveUrl || artifact.live_url);
   const title = artifact.kind === "browser" ? "Web research result" : artifact.title || artifact.kind;
+  const recordingUrls = Array.isArray(artifact.recordingUrls)
+    ? artifact.recordingUrls.filter((url) => typeof url === "string" && url.length > 0)
+    : [];
   return `
     <div class="artifact">
       <div>
@@ -242,7 +245,21 @@ function renderArtifact(artifact) {
         ${artifact.output ? renderArtifactOutput(artifact.output) : ""}
         ${artifact.warning ? `<div class="warning">${escapeHtml(artifact.warning)}</div>` : ""}
         ${liveUrl ? renderLiveLink(liveUrl) : ""}
+        ${recordingUrls.length ? renderRecordingLinks(recordingUrls) : ""}
       </div>
+    </div>
+  `;
+}
+
+function renderRecordingLinks(urls) {
+  return `
+    <div class="recording-links">
+      ${urls.map((url, index) => `
+        <a class="recording-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">
+          Download MP4${urls.length > 1 ? ` (${index + 1})` : ""}
+        </a>
+      `).join("")}
+      <div class="subtle">Presigned URL expires within 1 hour.</div>
     </div>
   `;
 }
