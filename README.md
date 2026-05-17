@@ -79,6 +79,13 @@ Approval gates are built into workflow templates for:
 - Authentication or OAuth handoff
 - Any irreversible external commitment
 
+How approval is enforced today:
+
+- Browser Use prompts instruct the agent to stop before payment, final submission, or account creation, and to return `approval_required: true` in its structured output.
+- The orchestrator inspects that structured output and, when approval is required, marks the task `pending` and the run `waiting_for_approval` instead of continuing.
+- The user can respond through the in-dashboard chat (`POST /api/chat`), which is how a pending task gets resumed or canceled.
+- `chargeAgentWallet` in `src/integrations/payments.js` is default-deny: with no Sponge credentials it returns `success: false, status: "not_charged"`, and with credentials it currently returns `mode: "blocked"` until a real adapter is wired. No code path in the live demo charges a wallet today.
+
 Live actions are controlled by environment flags in `.env`. The checked-in `.env.example` documents the required keys and safety toggles.
 
 ## Running Locally
