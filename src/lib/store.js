@@ -11,6 +11,7 @@ const state = {
   tasks: [],
   seedTasks: [],
   memory: [],
+  chat: [],
   events: []
 };
 
@@ -100,6 +101,33 @@ export function addMemory(content, type = "task") {
   return memory;
 }
 
+export function addChatMessage(role, content, metadata = {}) {
+  const message = {
+    id: `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    role,
+    content,
+    metadata,
+    at: new Date().toISOString()
+  };
+  state.chat.push(message);
+  state.chat = state.chat.slice(-80);
+  emit("chat.message", { message });
+  return message;
+}
+
+export function replaceSourceTasks(tasks, source = "Imported") {
+  state.seedTasks = tasks.map((task, index) => ({
+    id: task.id || `imported-${Date.now()}-${index + 1}`,
+    title: task.title,
+    source,
+    status: task.status || "todo",
+    notes: task.notes || ""
+  }));
+  state.tasks = clone(state.seedTasks);
+  emit("source.imported", { source, tasks: state.tasks });
+  return state.tasks;
+}
+
 export function emit(type, payload) {
   const event = {
     id: `evt-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -173,6 +201,20 @@ function compactPayload(type, payload) {
       taskId: payload.taskId,
       liveUrl: payload.liveUrl,
       warning: payload.warning || null
+    };
+  }
+  if (type === "chat.message") {
+    return {
+      message: {
+        role: payload.message?.role,
+        content: payload.message?.content
+      }
+    };
+  }
+  if (type === "source.imported") {
+    return {
+      source: payload.source,
+      count: payload.tasks?.length || 0
     };
   }
   return clone(payload);

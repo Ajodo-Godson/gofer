@@ -146,6 +146,22 @@ async function runWorkflowTemplateTask(runId, task) {
       warning: browser.warning || null
     });
 
+    if (template.type === "restaurant_reservation" && hasUsableReservationOutput(browser)) {
+      await runRestaurantReservationFollowup(runId, task, browser);
+      return;
+    }
+
+    if (template.id === "reservation.verify_availability" && isBrowserBudgetStop(browser)) {
+      addArtifact(runId, task.id, {
+        kind: "approval",
+        title: "Phone fallback approval required",
+        detail: "Online availability could not be verified within GOFER's browser budget. Approve the phone fallback and GOFER can call the restaurant to check 5:30 PM availability before booking.",
+        approvalGates: task.approvalGates
+      });
+      await finishTask(runId, task, "Online availability not verified. Approval required to call the restaurant before booking.");
+      return;
+    }
+
     if (browser.success === false) {
       throw new Error(browser.warning || browser.output || browser.result || "Browser workflow failed.");
     }
@@ -342,6 +358,16 @@ function parseJsonMaybe(value) {
   } catch {
     return null;
   }
+}
+
+function hasUsableReservationOutput(browser) {
+  const parsed = parseJsonMaybe(browser.output || browser.data?.output);
+  return Boolean(parsed?.recommended_candidate && Array.isArray(parsed?.candidates) && parsed.candidates.length);
+}
+
+function isBrowserBudgetStop(browser) {
+  const parsed = parseJsonMaybe(browser.output || browser.data?.output);
+  return parsed?.status === "stopped_by_gofer" || /step budget|cost budget|runtime limit/i.test(parsed?.blocker || browser.output || "");
 }
 
 async function notifyUser(summary) {

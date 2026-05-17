@@ -9,6 +9,15 @@ const els = {
   manualTaskForm: document.querySelector("#manualTaskForm"),
   manualTaskInput: document.querySelector("#manualTaskInput"),
   manualTaskSubmit: document.querySelector("#manualTaskSubmit"),
+  chatForm: document.querySelector("#chatForm"),
+  chatInput: document.querySelector("#chatInput"),
+  chatSubmit: document.querySelector("#chatSubmit"),
+  chatMessages: document.querySelector("#chatMessages"),
+  sourceForm: document.querySelector("#sourceForm"),
+  sourceUrlInput: document.querySelector("#sourceUrlInput"),
+  sourceTextInput: document.querySelector("#sourceTextInput"),
+  sourceSubmit: document.querySelector("#sourceSubmit"),
+  sourceStatus: document.querySelector("#sourceStatus"),
   runStatus: document.querySelector("#runStatus"),
   notionTasks: document.querySelector("#notionTasks"),
   integrations: document.querySelector("#integrations"),
@@ -54,6 +63,49 @@ els.manualTaskForm.addEventListener("submit", async (event) => {
   await refresh();
 });
 
+els.chatForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const message = els.chatInput.value.trim();
+  if (!message) return;
+  els.chatSubmit.disabled = true;
+  els.chatSubmit.textContent = "Sending...";
+  els.chatInput.value = "";
+  await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message })
+  });
+  els.chatSubmit.disabled = false;
+  els.chatSubmit.textContent = "Send";
+  await refresh();
+});
+
+els.sourceForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const url = els.sourceUrlInput.value.trim();
+  const text = els.sourceTextInput.value.trim();
+  if (!url && !text) return;
+  els.sourceSubmit.disabled = true;
+  els.sourceSubmit.textContent = "Importing...";
+  els.sourceStatus.textContent = "";
+  const response = await fetch("/api/import-tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, text })
+  });
+  const data = await response.json();
+  els.sourceSubmit.disabled = false;
+  els.sourceSubmit.textContent = "Import Tasks";
+  els.sourceStatus.textContent = data.ok
+    ? `Imported ${data.count} tasks from ${data.source}.`
+    : data.error || "Import failed.";
+  if (data.ok) {
+    els.sourceTextInput.value = "";
+    els.sourceUrlInput.value = "";
+  }
+  await refresh();
+});
+
 const stream = new EventSource("/api/events");
 stream.onmessage = async () => {
   await refresh();
@@ -72,6 +124,7 @@ function render() {
   renderTasks();
   renderIntegrations();
   renderChecklist();
+  renderChat();
   renderRun();
   renderAgentProcesses();
   renderMemory();
@@ -157,6 +210,7 @@ function renderRun() {
 }
 
 function renderLane(task) {
+  const artifacts = (task.artifacts || []).filter((artifact) => artifact.kind !== "workflow");
   return `
     <article class="lane">
       <div class="lane-head">
@@ -171,25 +225,51 @@ function renderLane(task) {
       </div>
       <div class="stage">${escapeHtml(task.stage)}</div>
       <div class="subtle">${escapeHtml(task.result || task.error || "Waiting for artifacts...")}</div>
-      ${(task.artifacts || []).map(renderArtifact).join("")}
+      ${artifacts.map(renderArtifact).join("")}
     </article>
   `;
 }
 
 function renderArtifact(artifact) {
   const liveUrl = normalizeLiveUrl(artifact.liveUrl || artifact.live_url);
+  const title = artifact.kind === "browser" ? "Web research result" : artifact.title || artifact.kind;
   return `
     <div class="artifact">
       <div>
-        <div class="artifact-title">${escapeHtml(artifact.title || artifact.kind)}</div>
+        <div class="artifact-title">${escapeHtml(title)}</div>
         <div class="subtle">${escapeHtml(artifact.detail || "")}</div>
         ${artifact.actionRequired ? renderActionRequired(artifact.actionRequired) : ""}
-        ${artifact.output ? `<pre class="artifact-output">${escapeHtml(artifact.output)}</pre>` : ""}
+        ${artifact.output ? renderArtifactOutput(artifact.output) : ""}
         ${artifact.warning ? `<div class="warning">${escapeHtml(artifact.warning)}</div>` : ""}
-        ${liveUrl ? renderBrowserFrame(liveUrl) : ""}
+        ${liveUrl ? renderLiveLink(liveUrl) : ""}
       </div>
     </div>
   `;
+}
+
+function renderArtifactOutput(output) {
+  const parsed = parseJsonMaybe(output);
+  if (parsed?.candidates?.length) {
+    return `
+      <div class="candidate-list">
+        ${parsed.candidates.map((candidate) => `
+          <div class="candidate">
+            <div class="candidate-head">
+              <strong>${escapeHtml(candidate.name || "Candidate")}</strong>
+              <span>${escapeHtml(candidate.estimated_price_level || "")}</span>
+            </div>
+            <div class="subtle">${escapeHtml(candidate.neighborhood_address || "")}</div>
+            <p>${escapeHtml(candidate.why_it_fits || "")}</p>
+            <div class="subtle">${escapeHtml(candidate.likely_booking_channel || "")}</div>
+            <div class="subtle">${escapeHtml(candidate.contact_info || "")}</div>
+            <div class="availability">${escapeHtml(candidate.availability || "availability_not_verified")}</div>
+          </div>
+        `).join("")}
+      </div>
+      ${parsed.next_action ? `<div class="next-action">${escapeHtml(parsed.next_action)}</div>` : ""}
+    `;
+  }
+  return `<details class="artifact-details"><summary>View structured output</summary><pre class="artifact-output">${escapeHtml(output)}</pre></details>`;
 }
 
 function renderActionRequired(action) {
@@ -201,16 +281,26 @@ function renderActionRequired(action) {
   `;
 }
 
-function renderBrowserFrame(liveUrl) {
+function renderLiveLink(liveUrl) {
   return `
-    <div class="browser-live">
-      <div class="browser-live-head">
-        <span>Browser Use live session</span>
-        <a href="${escapeHtml(liveUrl)}" target="_blank" rel="noreferrer">Open</a>
-      </div>
-      <iframe src="${escapeHtml(withBrowserUseChromeHidden(liveUrl))}" loading="lazy" title="Browser Use live session"></iframe>
-    </div>
+    <details class="artifact-details">
+      <summary>Debug session link</summary>
+      <a href="${escapeHtml(liveUrl)}" target="_blank" rel="noreferrer">Open browser session</a>
+    </details>
   `;
+}
+
+function renderChat() {
+  const messages = state.data.chat || [];
+  els.chatMessages.innerHTML = messages.length
+    ? messages.slice(-10).map((message) => `
+      <div class="chat-message ${escapeHtml(message.role)}">
+        <div class="chat-role">${message.role === "user" ? "You" : "GOFER"}</div>
+        <div>${escapeHtml(message.content)}</div>
+      </div>
+    `).join("")
+    : `<div class="empty-chat">After GOFER returns options, reply here with “yes”, “proceed”, or a specific choice.</div>`;
+  els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
 }
 
 function renderAgentProcesses() {
@@ -281,13 +371,6 @@ function normalizeLiveUrl(value) {
   }
 }
 
-function withBrowserUseChromeHidden(value) {
-  const url = new URL(value);
-  url.searchParams.set("ui", "false");
-  url.searchParams.set("theme", "light");
-  return url.href;
-}
-
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -295,4 +378,24 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function parseJsonMaybe(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  const text = String(value).trim();
+  const unfenced = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const candidates = [
+    text,
+    unfenced,
+    unfenced.slice(unfenced.indexOf("{"), unfenced.lastIndexOf("}") + 1)
+  ].filter((candidate) => candidate && candidate.includes("{"));
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try next candidate.
+    }
+  }
+  return null;
 }

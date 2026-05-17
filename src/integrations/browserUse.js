@@ -340,7 +340,7 @@ function detectActionRequired(session) {
       blocker: parsed.blocker || "DoorDash requires authentication."
     };
   }
-  if (/AUTH_REQUIRED|BLOCKED_BY_AUTH_MODAL|auth_required["']?\s*:\s*true|sign in|login|oauth|verification|captcha/i.test(text)) {
+  if (/BLOCKED_BY_AUTH_MODAL|auth_required["']?\s*:\s*true|auth required|sign in|login|oauth|verification|captcha/i.test(text)) {
     return {
       type: "auth",
       message: "Please complete the required authentication in the live browser, then rerun the step.",

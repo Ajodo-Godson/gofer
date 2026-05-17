@@ -23,7 +23,7 @@
       <section class="panel manual-panel">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Reusable Workflows</p>
+            <p class="eyebrow">Command Center</p>
             <h2>Dispatch Any Errand</h2>
           </div>
         </div>
@@ -36,6 +36,52 @@
           />
           <button id="manualTaskSubmit" class="primary" type="submit">Dispatch</button>
         </form>
+      </section>
+
+      <section class="grid command-grid">
+        <section class="panel chat-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Follow-Up</p>
+              <h2>Chat With GOFER</h2>
+            </div>
+          </div>
+          <div id="chatMessages" class="chat-messages"></div>
+          <form id="chatForm" class="chat-form">
+            <input
+              id="chatInput"
+              type="text"
+              placeholder="Approve, choose an option, or ask GOFER to continue..."
+              aria-label="Chat with GOFER"
+            />
+            <button id="chatSubmit" class="secondary" type="submit">Send</button>
+          </form>
+        </section>
+
+        <section class="panel source-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Source Connector</p>
+              <h2>Import To-Dos</h2>
+            </div>
+          </div>
+          <form id="sourceForm" class="source-form">
+            <input
+              id="sourceUrlInput"
+              type="url"
+              placeholder="Public Notion, Google Doc, or task doc URL"
+              aria-label="Task source URL"
+            />
+            <textarea
+              id="sourceTextInput"
+              rows="5"
+              placeholder="- Book dentist this week&#10;- Dispute PG&E overcharge&#10;- Order flowers for June 5"
+              aria-label="Paste task list"
+            ></textarea>
+            <button id="sourceSubmit" class="secondary" type="submit">Import Tasks</button>
+          </form>
+          <div id="sourceStatus" class="source-status subtle"></div>
+        </section>
       </section>
 
       <section class="grid">

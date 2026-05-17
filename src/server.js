@@ -7,7 +7,8 @@ import { config, integrationStatus, setupChecklist } from "./lib/config.js";
 import { getAgentSnapshots, startAgents, stopAgents } from "./agents/manager.js";
 import { isBrowserUseDemoRunning, startBrowserUseDemo } from "./lib/browserUseDemo.js";
 import { startDemoRun, startManualRun } from "./lib/orchestrator.js";
-import { bus, emit, getState, loadSeedData } from "./lib/store.js";
+import { importTasksFromSource } from "./lib/taskSource.js";
+import { addChatMessage, bus, emit, getState, loadSeedData, replaceSourceTasks } from "./lib/store.js";
 import { appointmentVoiceReply, summarizeCallState } from "./lib/voiceController.js";
 
 const root = process.cwd();
@@ -62,6 +63,30 @@ const server = createServer(async (req, res) => {
         emit("run.error", { error: error.message });
       });
       return;
+    }
+
+    if (url.pathname === "/api/chat" && req.method === "POST") {
+      const body = await readJson(req);
+      const message = String(body.message || "").trim();
+      if (!message) return json(res, { ok: false, error: "Message is required." }, 400);
+      const reply = await handleUserChat(message);
+      return json(res, { ok: true, reply });
+    }
+
+    if (url.pathname === "/api/import-tasks" && req.method === "POST") {
+      const body = await readJson(req);
+      const imported = await importTasksFromSource({
+        text: body.text,
+        url: body.url,
+        sourceName: body.sourceName
+      });
+      const tasks = replaceSourceTasks(imported.tasks, imported.source);
+      return json(res, {
+        ok: true,
+        source: imported.source,
+        count: tasks.length,
+        tasks
+      });
     }
 
     if (url.pathname === "/api/test-browser-use" && req.method === "POST") {
@@ -175,6 +200,110 @@ function verifyAgentPhoneSignature(rawBody, signature) {
   const expectedBuffer = Buffer.from(expected);
   const signatureBuffer = Buffer.from(signature);
   return expectedBuffer.length === signatureBuffer.length && timingSafeEqual(expectedBuffer, signatureBuffer);
+}
+
+async function handleUserChat(message) {
+  addChatMessage("user", message);
+  const state = getState();
+  const activeRun = state.runs[0];
+  const task = activeRun?.tasks?.[0];
+  const approval = latestApprovalArtifact(task);
+
+  if (!task || !approval) {
+    const reply = "I do not have a pending approval gate right now. Dispatch an errand first, then reply here to approve, change, or continue it.";
+    addChatMessage("assistant", reply);
+    return reply;
+  }
+
+  if (isNegative(message)) {
+    const reply = "Got it. I will not proceed. Tell me what to change, or dispatch a new errand.";
+    addChatMessage("assistant", reply, { runId: activeRun.id, taskId: task.id, action: "approval_declined" });
+    emit("approval.declined", { runId: activeRun.id, taskId: task.id, message });
+    return reply;
+  }
+
+  const selected = selectCandidateFromMessage(task, message);
+  if (isAffirmative(message) || selected) {
+    const restaurant = selected || approval.recommendation || "the recommended option";
+    const followup = buildFollowupTask(task, restaurant);
+    const reply = `Proceeding with ${restaurant}. I am starting the next step now: verify availability and prepare the booking path.`;
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "approval_accepted",
+      restaurant
+    });
+    emit("approval.accepted", { runId: activeRun.id, taskId: task.id, restaurant, followup });
+    startManualRun(followup).catch((error) => {
+      emit("run.error", { error: error.message });
+    });
+    return reply;
+  }
+
+  const reply = "I found a pending approval gate, but I could not tell which option you want. Reply with the restaurant name, or say yes to approve the recommended option.";
+  addChatMessage("assistant", reply, { runId: activeRun.id, taskId: task.id, action: "approval_clarify" });
+  return reply;
+}
+
+function latestApprovalArtifact(task) {
+  if (!task) return null;
+  const artifact = [...(task.artifacts || [])].reverse().find((item) => item.kind === "approval");
+  if (!artifact) return null;
+  return {
+    artifact,
+    recommendation: parseRecommendation(artifact.detail)
+  };
+}
+
+function parseRecommendation(detail) {
+  const match = String(detail || "").match(/Recommended:\s*([^.\n]+)/i);
+  return match?.[1]?.trim() || null;
+}
+
+function selectCandidateFromMessage(task, message) {
+  const text = message.toLowerCase();
+  for (const artifact of task.artifacts || []) {
+    const parsed = parseJsonMaybe(artifact.output);
+    const candidates = parsed?.candidates || [];
+    const match = candidates.find((candidate) => candidate?.name && text.includes(candidate.name.toLowerCase()));
+    if (match) return match.name;
+  }
+  return null;
+}
+
+function buildFollowupTask(task, selected) {
+  if (task.type === "restaurant_reservation") {
+    return `Verify live availability and prepare booking for ${selected} for this request: ${task.title}. Do not finalize the booking or submit payment without approval.`;
+  }
+  return `Continue this approved GOFER task for ${selected}: ${task.title}. Stop before any irreversible action.`;
+}
+
+function isAffirmative(message) {
+  return /\b(yes|yep|yeah|approve|approved|proceed|continue|go ahead|book it|confirm)\b/i.test(message);
+}
+
+function isNegative(message) {
+  return /\b(no|stop|cancel|do not|don't|hold off|decline)\b/i.test(message);
+}
+
+function parseJsonMaybe(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  const text = String(value).trim();
+  const unfenced = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const candidates = [
+    text,
+    unfenced,
+    unfenced.slice(unfenced.indexOf("{"), unfenced.lastIndexOf("}") + 1)
+  ].filter((candidate) => candidate && candidate.includes("{"));
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
 }
 
 async function staticFile(pathname, res) {

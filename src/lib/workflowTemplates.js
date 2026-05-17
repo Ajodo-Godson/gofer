@@ -1,5 +1,32 @@
 export const WORKFLOW_TEMPLATES = [
   {
+    id: "reservation.verify_availability",
+    type: "restaurant_reservation",
+    label: "Reservation availability check",
+    match: /(verify live availability|prepare booking|check availability|confirm reservation path)/i,
+    tools: ["browserUse", "agentPhone", "agentMail", "supermemory"],
+    approvalGates: ["final_booking", "payment_or_deposit"],
+    agents: ["browser-recon", "phone-booking", "email-application", "memory-legal"],
+    browserCapability: "reservation-availability",
+    model: "bu-mini",
+    maxSteps: 18,
+    maxRuntimeMs: 150000,
+    maxCostUsd: 0.45,
+    showLive: false,
+    outputSchema: reservationOutputSchema(),
+    browserPrompt: ({ task, user }) => [
+      "You are GOFER's BrowserReconAgent. Verify the booking path for the specific restaurant in this approved follow-up.",
+      "You may open the restaurant website, OpenTable, Resy, Toast, or another official reservation page if needed.",
+      "Do not finalize the reservation, submit payment, enter card details, create an account, or click a final confirmation button.",
+      `Approved follow-up: ${task.title}`,
+      `User home/base context: ${user.address || user.zip || "unknown"}.`,
+      "Look for availability around the requested date/time and party size.",
+      "If live availability is visible, return it. If login, deposit, phone-only booking, or final confirmation is required, stop and mark approval_required=true.",
+      "If online availability cannot be verified, return the best next action: call restaurant, email, or ask user for approval to proceed on the booking site.",
+      "Return concise JSON with: status, approval_required, recommended_candidate, candidates, next_action, blockers."
+    ].join(" ")
+  },
+  {
     id: "reservation.find_and_book",
     type: "restaurant_reservation",
     label: "Restaurant reservation",
@@ -9,55 +36,11 @@ export const WORKFLOW_TEMPLATES = [
     agents: ["browser-recon", "phone-booking", "email-application", "memory-legal"],
     browserCapability: "reservation-discovery",
     model: "bu-mini",
-    maxSteps: 8,
-    maxRuntimeMs: 75000,
-    maxCostUsd: 0.18,
+    maxSteps: 14,
+    maxRuntimeMs: 100000,
+    maxCostUsd: 0.25,
     showLive: false,
-    outputSchema: {
-      type: "object",
-      properties: {
-        status: { type: "string" },
-        approval_required: { type: "boolean" },
-        recommended_candidate: {
-          anyOf: [
-            { type: "string" },
-            {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                reason: { type: "string" }
-              }
-            }
-          ]
-        },
-        candidates: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              neighborhood_address: { type: "string" },
-              estimated_price_level: { type: "string" },
-              why_it_fits: { type: "string" },
-              likely_booking_channel: { type: "string" },
-              contact_info: { type: "string" },
-              availability: { type: "string" }
-            }
-          }
-        },
-        next_action: { type: "string" },
-        blockers: {
-          anyOf: [
-            { type: "string" },
-            {
-              type: "array",
-              items: { type: "string" }
-            }
-          ]
-        }
-      },
-      required: ["status", "approval_required", "recommended_candidate", "candidates", "next_action"]
-    },
+    outputSchema: reservationOutputSchema(),
     browserPrompt: ({ task, user }) => [
       "You are GOFER's BrowserReconAgent. Use Browser Use web search as a research tool. Do not show the browser; just return the summary.",
       "Do not make a final booking.",
@@ -181,5 +164,53 @@ function redactUserForPrompt(user) {
       dentalProvider: user.insurance.dentalProvider,
       groupNumber: user.insurance.groupNumber
     } : null
+  };
+}
+
+function reservationOutputSchema() {
+  return {
+    type: "object",
+    properties: {
+      status: { type: "string" },
+      approval_required: { type: "boolean" },
+      recommended_candidate: {
+        anyOf: [
+          { type: "string" },
+          {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              reason: { type: "string" }
+            }
+          }
+        ]
+      },
+      candidates: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            neighborhood_address: { type: "string" },
+            estimated_price_level: { type: "string" },
+            why_it_fits: { type: "string" },
+            likely_booking_channel: { type: "string" },
+            contact_info: { type: "string" },
+            availability: { type: "string" }
+          }
+        }
+      },
+      next_action: { type: "string" },
+      blockers: {
+        anyOf: [
+          { type: "string" },
+          {
+            type: "array",
+            items: { type: "string" }
+          }
+        ]
+      }
+    },
+    required: ["status", "approval_required", "recommended_candidate", "candidates", "next_action"]
   };
 }
