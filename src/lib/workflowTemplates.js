@@ -65,10 +65,25 @@ export const WORKFLOW_TEMPLATES = [
     approvalGates: ["payment", "order_submission"],
     agents: ["browser-recon", "payment", "email-application", "memory-legal"],
     browserCapability: "purchase-until-checkout",
+    model: "bu-mini",
+    maxSteps: 14,
+    maxRuntimeMs: 120000,
+    maxCostUsd: 0.35,
+    showLive: false,
+    outputSchema: actionWorkflowSchema({
+      merchant: { type: "string" },
+      selected_items: {
+        type: "array",
+        items: { type: "string" }
+      },
+      subtotal: { type: "string" },
+      checkout_state: { type: "string" }
+    }),
     browserPrompt: ({ task }) => [
       "You are GOFER's BrowserReconAgent. Build a purchase cart but do not submit payment or final order.",
       `User request: ${task.title}`,
       "Find the requested product/service, select reasonable defaults, add to cart, and stop at checkout review.",
+      "Never claim an order was placed unless the site itself shows a completed order confirmation after explicit approval. In this workflow there is no such approval, so stop before that point.",
       "If login, OAuth, payment, card, address confirmation, or final order submission is required, stop and return approval_required=true.",
       "Return JSON with: status, approval_required, merchant, selected_items, subtotal, checkout_state, next_action, blockers."
     ].join(" ")
@@ -82,6 +97,22 @@ export const WORKFLOW_TEMPLATES = [
     approvalGates: ["submit_sensitive_form"],
     agents: ["browser-recon", "email-application", "memory-legal"],
     browserCapability: "form-fill",
+    model: "bu-mini",
+    maxSteps: 12,
+    maxRuntimeMs: 90000,
+    maxCostUsd: 0.3,
+    showLive: false,
+    outputSchema: actionWorkflowSchema({
+      form_name: { type: "string" },
+      fields_completed: {
+        type: "array",
+        items: { type: "string" }
+      },
+      fields_missing: {
+        type: "array",
+        items: { type: "string" }
+      }
+    }),
     browserPrompt: ({ task, user }) => [
       "You are GOFER's BrowserReconAgent. Fill the requested form using known user details, but stop before submitting sensitive or irreversible data.",
       `User request: ${task.title}`,
@@ -108,7 +139,30 @@ export const WORKFLOW_TEMPLATES = [
     tools: ["browserUse", "agentMail", "supermemory"],
     approvalGates: ["submit_dispute"],
     agents: ["browser-recon", "email-application", "memory-legal"],
-    browserCapability: "billing-dispute"
+    browserCapability: "billing-dispute",
+    model: "bu-mini",
+    maxSteps: 14,
+    maxRuntimeMs: 120000,
+    maxCostUsd: 0.35,
+    showLive: false,
+    outputSchema: actionWorkflowSchema({
+      portal_or_company: { type: "string" },
+      disputed_amount: { type: "string" },
+      evidence_found: {
+        type: "array",
+        items: { type: "string" }
+      },
+      draft_dispute: { type: "string" }
+    }),
+    browserPrompt: ({ task, user }) => [
+      "You are GOFER's BrowserReconAgent. Prepare a billing dispute, but do not submit it.",
+      `User request: ${task.title}`,
+      `Known user context: ${JSON.stringify(redactUserForPrompt(user))}`,
+      "Find the relevant bill/charge if accessible. Identify the disputed amount and draft the dispute language.",
+      "Do not click a final submit, file dispute, send message, payment, or confirmation button.",
+      "If login, OAuth, account verification, or final submission is required, stop and return approval_required=true.",
+      "Return JSON with: status, approval_required, portal_or_company, disputed_amount, evidence_found, draft_dispute, next_action, blockers."
+    ].join(" ")
   }
 ];
 
@@ -121,6 +175,16 @@ export function detectWorkflow(text) {
     approvalGates: ["external_commitment"],
     agents: ["browser-recon", "phone-booking", "memory-legal"],
     browserCapability: "general",
+    model: "bu-mini",
+    maxSteps: 10,
+    maxRuntimeMs: 90000,
+    maxCostUsd: 0.25,
+    outputSchema: actionWorkflowSchema({
+      completed_steps: {
+        type: "array",
+        items: { type: "string" }
+      }
+    }),
     browserPrompt: ({ task }) => [
       "You are GOFER's BrowserReconAgent. Complete the reversible research/action steps for this errand.",
       `User request: ${task.title}`,
@@ -212,5 +276,27 @@ function reservationOutputSchema() {
       }
     },
     required: ["status", "approval_required", "recommended_candidate", "candidates", "next_action"]
+  };
+}
+
+function actionWorkflowSchema(extraProperties = {}) {
+  return {
+    type: "object",
+    properties: {
+      status: { type: "string" },
+      approval_required: { type: "boolean" },
+      next_action: { type: "string" },
+      blockers: {
+        anyOf: [
+          { type: "string" },
+          {
+            type: "array",
+            items: { type: "string" }
+          }
+        ]
+      },
+      ...extraProperties
+    },
+    required: ["status", "approval_required", "next_action"]
   };
 }

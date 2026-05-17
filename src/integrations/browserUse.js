@@ -420,31 +420,49 @@ async function simulateBrowserTask({ task, metadata }) {
     return {
       mode: "simulated",
       provider: "Browser Use",
-      result: "PG&E dispute submitted for $47 duplicated charge.",
-      confirmation: "PGE-4821-DEMO",
+      result: "PG&E dispute draft prepared for the $47 duplicated charge. Submission requires approval.",
+      output: JSON.stringify({
+        status: "Dispute draft prepared.",
+        approval_required: true,
+        portal_or_company: "PG&E",
+        disputed_amount: "$47",
+        evidence_found: ["Billing period April 2026 appears duplicated."],
+        draft_dispute: "I am disputing a duplicated $47 charge for the April 2026 billing period.",
+        next_action: "Approve final dispute submission in the portal.",
+        blockers: []
+      }),
       screenshot: "/mock-confirmation/pge-dispute.png",
       steps: [
         "Opened authenticated PG&E portal",
         "Navigated Billing > View Charges",
         "Selected duplicated $47 charge",
-        "Filled dispute form",
-        "Captured confirmation"
+        "Drafted dispute form",
+        "Stopped before final submission"
       ]
     };
   }
 
-  if (capability === "purchase") {
+  if (capability === "purchase" || capability === "purchase-until-checkout") {
     return {
       mode: "simulated",
       provider: "Browser Use",
-      result: "Peonies ordered for Mom with delivery on June 4.",
-      confirmation: "FLOWERS-2048-DEMO",
+      result: "Peony order cart prepared for Mom with delivery on June 4. Payment and order submission require approval.",
+      output: JSON.stringify({
+        status: "Cart prepared.",
+        approval_required: true,
+        merchant: "Demo florist",
+        selected_items: ["Peony arrangement", "June 4 delivery"],
+        subtotal: "$55",
+        checkout_state: "stopped_before_payment",
+        next_action: "Approve payment and final order submission.",
+        blockers: []
+      }),
       amount: 55,
       steps: [
         "Opened florist checkout",
         "Selected peony arrangement",
         "Entered delivery details",
-        "Submitted order"
+        "Stopped before payment and order submission"
       ]
     };
   }

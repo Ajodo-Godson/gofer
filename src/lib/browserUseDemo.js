@@ -93,11 +93,13 @@ async function runBrowserUseDemo(kind = "doordash") {
         : "Browser Use test completed in fallback mode."
     });
     updateRun(run.id, {
-      status: "completed",
+      status: result.success === false ? "completed_with_errors" : "completed",
       completedAt: new Date().toISOString(),
-      summary: isPortal
-        ? "Browser Use patient portal automation started successfully."
-        : "Browser Use DoorDash cart demo started successfully."
+      summary: result.success === false
+        ? (result.actionRequired?.message || result.warning || "Browser Use demo needs attention before it can continue.")
+        : isPortal
+        ? "Browser Use patient portal automation reached its configured stopping point."
+        : "Browser Use DoorDash cart demo reached its configured stopping point."
     });
     emit("browseruse.test", {
       mode: result.mode,

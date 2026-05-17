@@ -39,7 +39,7 @@ export async function startDemoRun(options = {}) {
 
   const summary = buildSummary(run.tasks);
   updateRun(run.id, {
-    status: failures.length ? "completed_with_errors" : "completed",
+    status: finalRunStatus(run.tasks, failures),
     completedAt: new Date().toISOString(),
     summary
   });
@@ -66,7 +66,7 @@ export async function startManualRun(title) {
   const failures = settled.filter((item) => item.status === "rejected");
   const summary = buildSummary(run.tasks);
   updateRun(run.id, {
-    status: failures.length ? "completed_with_errors" : "completed",
+    status: finalRunStatus(run.tasks, failures),
     completedAt: new Date().toISOString(),
     summary
   });
@@ -90,10 +90,6 @@ async function runTask(runId, task) {
 
     if (task.type === "appointment_booking") {
       await runAppointmentTask(runId, task);
-    } else if (task.type === "billing_dispute") {
-      await runBillingDisputeTask(runId, task);
-    } else if (task.type === "purchase") {
-      await runPurchaseTask(runId, task);
     } else if (task.workflowId && task.workflowId !== "general.errand") {
       await runWorkflowTemplateTask(runId, task);
     } else {
@@ -162,6 +158,17 @@ async function runWorkflowTemplateTask(runId, task) {
       return;
     }
 
+    const parsedOutput = parseJsonMaybe(browser.output || browser.data?.output);
+    if (hasApprovalGateOutput(parsedOutput, browser)) {
+      await markBrowserApprovalPending(runId, task, template, parsedOutput, browser);
+      return;
+    }
+
+    if (browser.success === false && hasUsableWorkflowOutput(parsedOutput)) {
+      await markBrowserApprovalPending(runId, task, template, parsedOutput, browser);
+      return;
+    }
+
     if (browser.success === false) {
       throw new Error(browser.warning || browser.output || browser.result || "Browser workflow failed.");
     }
@@ -171,9 +178,7 @@ async function runWorkflowTemplateTask(runId, task) {
       return;
     }
 
-    const result = browser.actionRequired
-      ? `Ready for user approval: ${browser.actionRequired.message}`
-      : browser.output || browser.result || "Workflow browser step completed.";
+    const result = parsedOutput?.status || browser.output || browser.result || "Workflow browser step completed.";
     await finishTask(runId, task, result);
     return;
   }
@@ -290,63 +295,17 @@ function resolveAppointmentProvider(task, user) {
 }
 
 async function runBillingDisputeTask(runId, task) {
-  updateTask(runId, task.id, { stage: "Operating authenticated portal with Browser Use" });
-  const browser = await dispatchAgentJob("browser-recon", "browser-task", {
-    task: "Open the authenticated utility portal, find the duplicated $47 charge, submit a dispute, and capture confirmation.",
-    metadata: { capability: "billing-dispute", taskId: task.id }
+  await runWorkflowTemplateTask(runId, {
+    ...task,
+    workflowId: task.workflowId || "billing.dispute_charge"
   });
-
-  addArtifact(runId, task.id, {
-    kind: "browser",
-    title: "Browser Use portal action",
-    detail: browser.result,
-    steps: browser.steps,
-    confirmation: browser.confirmation
-  });
-
-  await finishTask(runId, task, `${browser.result} Ref ${browser.confirmation || "pending"}.`);
 }
 
 async function runPurchaseTask(runId, task) {
-  updateTask(runId, task.id, { stage: "Checking spending policy" });
-  const amount = 55;
-  const user = getState().user;
-  if (amount > user.spendingPolicy.autoApproveUnder) {
-    addArtifact(runId, task.id, {
-      kind: "approval",
-      title: "Auto-approved by policy",
-      detail: `$${amount} is under the $${user.spendingPolicy.autoApproveUnder} limit.`
-    });
-  }
-
-  updateTask(runId, task.id, { stage: "Completing checkout with Browser Use" });
-  const browser = await dispatchAgentJob("browser-recon", "browser-task", {
-    task: "Order peony flowers for Mom's birthday, delivery June 4, using the agent wallet virtual card.",
-    metadata: { capability: "purchase", taskId: task.id }
+  await runWorkflowTemplateTask(runId, {
+    ...task,
+    workflowId: task.workflowId || "browser.purchase_until_checkout"
   });
-
-  updateTask(runId, task.id, { stage: "Paying from Sponge wallet" });
-  const payment = await dispatchAgentJob("payment", "wallet-charge", {
-    amount: browser.amount || amount,
-    description: task.title
-  });
-
-  addArtifact(runId, task.id, {
-    kind: "payment",
-    title: "Sponge wallet payment",
-    detail: `$${payment.amount} paid from agent wallet.`,
-    payment
-  });
-
-  addArtifact(runId, task.id, {
-    kind: "browser",
-    title: "Browser Use checkout",
-    detail: browser.result,
-    steps: browser.steps,
-    confirmation: browser.confirmation
-  });
-
-  await finishTask(runId, task, `${browser.result} Confirmation ${browser.confirmation || "pending"}.`);
 }
 
 async function runGeneralTask(runId, task) {
@@ -432,6 +391,27 @@ function isBrowserBudgetStop(browser) {
   return parsed?.status === "stopped_by_gofer" || /step budget|cost budget|runtime limit/i.test(parsed?.blocker || browser.output || "");
 }
 
+function hasApprovalGateOutput(parsed, browser) {
+  if (parsed?.approval_required === true) return true;
+  return Boolean(browser.actionRequired);
+}
+
+function hasUsableWorkflowOutput(parsed) {
+  return Boolean(parsed?.status && (parsed?.next_action || parsed?.blockers || parsed?.approval_required !== undefined));
+}
+
+async function markBrowserApprovalPending(runId, task, template, parsed, browser) {
+  const nextAction = parsed?.next_action || browser.actionRequired?.message || "User approval or intervention is required before GOFER can continue.";
+  addArtifact(runId, task.id, {
+    kind: "approval",
+    title: "Approval required",
+    detail: nextAction,
+    approvalGates: task.approvalGates,
+    blockers: parsed?.blockers || browser.actionRequired?.blocker || null
+  });
+  await markTaskPending(runId, task, `${template.label} is waiting for approval: ${nextAction}`);
+}
+
 async function notifyUser(summary) {
   const user = getState().user;
   const smsTo = config.demo.userPhone || user.phone;
@@ -454,4 +434,10 @@ function buildSummary(tasks) {
   pending.forEach((task) => lines.push(`Pending: ${task.result}`));
   failed.forEach((task) => lines.push(`Needs attention: ${task.title} (${task.error})`));
   return `${completed.length} tasks done.${pending.length ? ` ${pending.length} pending confirmation.` : ""}${failed.length ? ` ${failed.length} need attention.` : ""}\n${lines.join("\n")}`;
+}
+
+function finalRunStatus(tasks, failures) {
+  if (failures.length || tasks.some((task) => task.status === "failed")) return "completed_with_errors";
+  if (tasks.some((task) => task.status === "pending")) return "waiting_for_approval";
+  return "completed";
 }

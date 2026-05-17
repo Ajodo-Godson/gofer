@@ -99,6 +99,7 @@ export function dispatchAgentJob(agentId, type, payload, options = {}) {
 function spawnAgent(definition) {
   const workerPath = join(process.cwd(), "src", "agents", "worker.js");
   const child = fork(workerPath, [], {
+    execArgv: [],
     env: {
       ...process.env,
       GOFER_AGENT_ID: definition.id,

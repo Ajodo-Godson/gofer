@@ -6,17 +6,20 @@ export async function chargeAgentWallet({ amount, description }) {
     return {
       mode: "simulated",
       provider: "Sponge",
+      success: false,
       amount,
       description,
-      walletBalance: 145,
-      virtualCard: "demo-card-used"
+      status: "not_charged",
+      blocker: "No Sponge API key is configured. GOFER did not charge or authorize a wallet payment."
     };
   }
 
   return {
-    mode: "real",
+    mode: "blocked",
     provider: "Sponge",
-    note: "Sponge SDK adapter needs the hackathon wallet credential shape.",
+    success: false,
+    status: "adapter_missing",
+    blocker: "Sponge SDK/API adapter is not implemented for the available credential shape. GOFER did not charge or authorize a wallet payment.",
     amount,
     description
   };

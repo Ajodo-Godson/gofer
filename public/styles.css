@@ -260,6 +260,11 @@ h3 {
   background: var(--green);
 }
 
+.badge.waiting_for_approval {
+  color: #171003;
+  background: var(--amber);
+}
+
 .status.completed {
   color: #06100b;
   background: var(--green);
