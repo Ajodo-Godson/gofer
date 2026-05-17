@@ -42,9 +42,9 @@ els.testBrowserPortal.addEventListener("click", async () => {
   await refresh();
 });
 
-els.testBrowserUse.addEventListener("click", async () => {
+  els.testBrowserUse.addEventListener("click", async () => {
   els.testBrowserUse.disabled = true;
-  els.testBrowserUse.textContent = "Opening DoorDash...";
+  els.testBrowserUse.textContent = "Finding options...";
   await fetch("/api/test-browser-use", { method: "POST" });
   await refresh();
 });
@@ -203,7 +203,7 @@ function renderRun() {
   els.testBrowserPortal.disabled = browserRunning;
   els.testBrowserPortal.textContent = browserRunning ? "Browser running..." : "Run Patient Portal";
   els.testBrowserUse.disabled = browserRunning;
-  els.testBrowserUse.textContent = browserRunning ? "Browser running..." : "Run DoorDash Cart";
+  els.testBrowserUse.textContent = browserRunning ? "Browser running..." : "Find DoorDash Options";
 
   els.agentLanes.className = "lanes";
   els.agentLanes.innerHTML = run.tasks.map(renderLane).join("");
@@ -267,6 +267,24 @@ function renderArtifactOutput(output) {
         `).join("")}
       </div>
       ${parsed.next_action ? `<div class="next-action">${escapeHtml(parsed.next_action)}</div>` : ""}
+    `;
+  }
+  if (parsed?.options?.length) {
+    return `
+      <div class="candidate-list">
+        ${parsed.options.map((option) => `
+          <div class="candidate">
+            <div class="candidate-head">
+              <strong>${escapeHtml(option.restaurant_name || "Option")}</strong>
+              <span>${escapeHtml(option.estimated_price || "")}</span>
+            </div>
+            <p>${escapeHtml(option.why_it_fits || "")}</p>
+            <div class="subtle">${escapeHtml((option.food_choices || []).join(", "))}</div>
+            <div class="availability">${escapeHtml(option.next_action || "Approve profile use to build the cart.")}</div>
+          </div>
+        `).join("")}
+      </div>
+      ${parsed.user_instruction ? `<div class="next-action">${escapeHtml(parsed.user_instruction)}</div>` : ""}
     `;
   }
   return `<details class="artifact-details"><summary>View structured output</summary><pre class="artifact-output">${escapeHtml(output)}</pre></details>`;

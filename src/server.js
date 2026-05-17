@@ -228,6 +228,10 @@ async function handleUserChat(message) {
     return handleAuthChat({ message, activeRun, task, authHandoff });
   }
 
+  if (task?.type === "browser_test" && /doordash/i.test(task.title) && isAffirmative(message)) {
+    return handleDoorDashCartApproval({ message, activeRun, task });
+  }
+
   const selected = selectCandidateFromMessage(task, message);
   if (isAffirmative(message) || selected) {
     const restaurant = selected || approval.recommendation || "the recommended option";
@@ -248,6 +252,50 @@ async function handleUserChat(message) {
 
   const reply = "I found a pending approval gate, but I could not tell which option you want. Reply with the restaurant name, or say yes to approve the recommended option.";
   addChatMessage("assistant", reply, { runId: activeRun.id, taskId: task.id, action: "approval_clarify" });
+  return reply;
+}
+
+async function handleDoorDashCartApproval({ message, activeRun, task }) {
+  const hasProfile = Boolean(config.browserUse.profileId);
+  const profileApproved = /profile|cart|checkout|add|order|approve|proceed|continue|yes/i.test(message);
+  if (!hasProfile) {
+    const reply = "I found food options first. To build the DoorDash cart, GOFER needs your synced Browser Use profile. Sync once, set `BROWSER_USE_PROFILE_ID`, restart GOFER, then reply `approve profile`.";
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "doordash_cart_profile_required"
+    });
+    emit("auth.required", { runId: activeRun.id, taskId: task.id, reason: "doordash_cart_profile_required" });
+    return reply;
+  }
+  if (!profileApproved) {
+    const reply = "I found food options. Reply `approve profile` to use your synced Browser Use profile and build the cart. GOFER will still stop before payment or order submission.";
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "doordash_cart_permission_requested"
+    });
+    return reply;
+  }
+  const memory = rememberBrowserProfileApproval({
+    taskTitle: task.title,
+    runId: activeRun.id,
+    taskId: task.id
+  });
+  saveMemory({ content: memory.content }).catch((error) => {
+    emit("memory.save_failed", { error: error.message, source: "browser_profile_permission" });
+  });
+  const followup = buildAuthenticatedFollowupTask(task, { blocker: "cart building requires authenticated DoorDash profile" });
+  const reply = "Approved. I will use your synced Browser Use profile to build the DoorDash cart and stop before payment or order submission.";
+  addChatMessage("assistant", reply, {
+    runId: activeRun.id,
+    taskId: task.id,
+    action: "doordash_cart_profile_accepted",
+    followup
+  });
+  startManualRun(followup).catch((error) => {
+    emit("run.error", { error: error.message });
+  });
   return reply;
 }
 

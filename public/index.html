@@ -16,9 +16,22 @@
         <div class="actions">
           <button id="runDemo" class="primary">Run GOFER demo</button>
           <button id="testBrowserPortal" class="secondary">Run Patient Portal</button>
-          <button id="testBrowserUse" class="secondary">Run DoorDash Cart</button>
+          <button id="testBrowserUse" class="secondary">Find DoorDash Options</button>
         </div>
       </header>
+
+      <section class="panel profile-help">
+        <div>
+          <p class="eyebrow">Authenticated Sites</p>
+          <h2>One-Time Browser Profile Setup</h2>
+        </div>
+        <ol>
+          <li>Log in to DoorDash in your normal browser.</li>
+          <li>Run Browser Use profile sync once: <code>export BROWSER_USE_API_KEY=your_key && curl -fsSL https://browser-use.com/profile.sh | sh</code></li>
+          <li>Copy the returned profile ID into <code>BROWSER_USE_PROFILE_ID</code> in <code>.env</code>, then restart GOFER.</li>
+        </ol>
+        <p class="subtle">GOFER can search public options first. It only asks for profile permission when it needs account state to add to cart or continue through OAuth.</p>
+      </section>
 
       <section class="panel manual-panel">
         <div class="section-head">

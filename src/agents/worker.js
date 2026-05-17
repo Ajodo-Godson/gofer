@@ -1,6 +1,6 @@
 import "../lib/env.js";
 import { placeCall } from "../integrations/agentphone.js";
-import { runBrowserTask, runDoorDashCartDemo, runPatientPortalDemo } from "../integrations/browserUse.js";
+import { runBrowserTask, runDoorDashCartDemo, runDoorDashDiscoveryDemo, runPatientPortalDemo } from "../integrations/browserUse.js";
 import { sendEmail } from "../integrations/agentmail.js";
 import { retrieveMossContext, saveMemory, searchMemory } from "../integrations/memory.js";
 import { chargeAgentWallet } from "../integrations/payments.js";
@@ -91,6 +91,7 @@ async function handleBrowserJob(job) {
       });
     }
   };
+  if (job.type === "doordash-discovery") return runDoorDashDiscoveryDemo(options);
   if (job.type === "doordash-cart") return runDoorDashCartDemo(options);
   if (job.type === "patient-portal") return runPatientPortalDemo(options);
   return runBrowserTask(job.payload, options);

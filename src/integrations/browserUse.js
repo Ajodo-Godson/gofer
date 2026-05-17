@@ -62,6 +62,56 @@ export async function testActualWebsite() {
   return runDoorDashCartDemo();
 }
 
+export async function runDoorDashDiscoveryDemo(options = {}) {
+  return runBrowserTask({
+    task: [
+      "You are GOFER's BrowserReconAgent running DoorDash public discovery only.",
+      "Do not sign in. Do not add anything to cart. Do not open checkout. Do not enter payment.",
+      "Use web search or public DoorDash pages to find restaurants and likely food choices near 680 Folsom St, San Francisco, CA.",
+      "Prioritize restaurants that are likely open for delivery/pickup and have normal entree items.",
+      "Return 3 options with restaurant_name, food_choices, why_it_fits, estimated_price, and next_action.",
+      "If DoorDash blocks access or asks for login, do not fail. Return the best public options found and set auth_required=false because cart-building is the later authenticated step.",
+      "Return structured output with: status, auth_required, options, recommended_option, current_page_state, user_instruction, blocker."
+    ].join(" "),
+    maxCostUsd: 0.25,
+    model: "bu-mini",
+    outputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string" },
+        auth_required: { type: "boolean" },
+        options: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              restaurant_name: { type: "string" },
+              food_choices: {
+                type: "array",
+                items: { type: "string" }
+              },
+              why_it_fits: { type: "string" },
+              estimated_price: { type: "string" },
+              next_action: { type: "string" }
+            }
+          }
+        },
+        recommended_option: { type: "string" },
+        current_page_state: { type: "string" },
+        user_instruction: { type: "string" },
+        blocker: { type: "string" }
+      },
+      required: ["status", "auth_required", "options", "current_page_state"]
+    },
+    metadata: {
+      capability: "doordash-discovery",
+      safety: "public-discovery-before-auth",
+      maxSteps: 8,
+      maxRuntimeMs: 70000
+    }
+  }, options);
+}
+
 export async function runDoorDashCartDemo(options = {}) {
   const hasProfile = Boolean(config.browserUse.profileId);
   if (!hasProfile) {
@@ -464,6 +514,45 @@ async function simulateBrowserTask({ task, metadata }) {
         "Entered delivery details",
         "Stopped before payment and order submission"
       ]
+    };
+  }
+
+  if (capability === "doordash-discovery") {
+    return {
+      mode: "simulated",
+      provider: "Browser Use",
+      result: "DoorDash public discovery completed. Cart building requires profile approval.",
+      output: JSON.stringify({
+        status: "Found public food options near 680 Folsom St.",
+        auth_required: false,
+        recommended_option: "Dumpling Time - pork soup dumplings or shrimp toast",
+        options: [
+          {
+            restaurant_name: "Dumpling Time",
+            food_choices: ["Pork soup dumplings", "Shrimp toast", "Garlic noodles"],
+            why_it_fits: "Close to SoMa/Mission Bay and good for a quick team meal.",
+            estimated_price: "$$",
+            next_action: "Approve profile use to add one selected item to cart."
+          },
+          {
+            restaurant_name: "RT Rotisserie",
+            food_choices: ["Chicken bowl", "Rotisserie chicken sandwich"],
+            why_it_fits: "Reliable delivery-friendly entree options.",
+            estimated_price: "$$",
+            next_action: "Approve profile use to add one selected item to cart."
+          },
+          {
+            restaurant_name: "The Bird",
+            food_choices: ["Fried chicken sandwich", "Loaded fries"],
+            why_it_fits: "Fast casual option near downtown with straightforward cart items.",
+            estimated_price: "$",
+            next_action: "Approve profile use to add one selected item to cart."
+          }
+        ],
+        current_page_state: "Public discovery only; no login or cart action attempted.",
+        user_instruction: "Pick an option, then approve profile use to build the cart.",
+        blocker: ""
+      })
     };
   }
 
