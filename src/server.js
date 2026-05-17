@@ -267,7 +267,86 @@ async function handleAgentMailWebhook(req, res) {
     receivedAt: inbound.receivedAt
   });
 
+  // Surface the reply to the user in chat. Read-only: we never auto-reply,
+  // never act on the contents - that would need its own approval flow.
+  surfaceInboundEmailToChat(inbound);
+
   return json(res, { ok: true, handled: true });
+}
+
+// Posts an assistant chat message describing the inbound email and tries to
+// link it to a recently-active task so the user can spot a relevant reply.
+// Best-effort - if we cannot find a sensible task, the message still goes
+// out so the user sees that an email arrived.
+function surfaceInboundEmailToChat(inbound) {
+  const state = getState();
+  const linkedTask = findLinkedTaskForInboundEmail(state, inbound);
+  const fromLabel = inbound.from || "an unknown sender";
+  const subjectLabel = inbound.subject ? `“${inbound.subject}”` : "(no subject)";
+  const previewLabel = inbound.preview
+    ? ` Preview: “${truncate(inbound.preview, 220)}”.`
+    : "";
+  const taskLine = linkedTask
+    ? ` This may be related to: ${linkedTask.title}.`
+    : "";
+  const content = `Got an email reply from ${fromLabel}. Subject: ${subjectLabel}.${taskLine}${previewLabel} I will not act on this until you tell me to.`;
+
+  addChatMessage("assistant", content, {
+    source: "agentmail.received",
+    threadId: inbound.threadId || null,
+    messageId: inbound.messageId || null,
+    inReplyTo: inbound.inReplyTo || null,
+    from: inbound.from || null,
+    subject: inbound.subject || null,
+    runId: linkedTask?.runId || null,
+    taskId: linkedTask?.taskId || null
+  });
+}
+
+// Heuristic: prefer a task that is awaiting a response (status pending /
+// awaiting_approval / running) and whose title shares meaningful words with
+// the email subject. Falls back to the most recent run's first task. Returns
+// null if there is no active run at all.
+function findLinkedTaskForInboundEmail(state, inbound) {
+  const runs = state.runs || [];
+  if (runs.length === 0) return null;
+
+  const subjectTokens = tokenize(inbound.subject);
+  const candidateStatuses = new Set(["pending", "awaiting_approval", "running"]);
+
+  // Score: status weight + token overlap with subject.
+  let best = null;
+  for (const run of runs) {
+    for (const task of run.tasks || []) {
+      const statusScore = candidateStatuses.has(task.status) ? 2 : 0;
+      const titleTokens = tokenize(task.title);
+      const overlap = subjectTokens.filter((token) => titleTokens.includes(token)).length;
+      const score = statusScore + overlap;
+      if (score === 0) continue;
+      if (!best || score > best.score) {
+        best = { score, runId: run.id, taskId: task.id, title: task.title };
+      }
+    }
+  }
+  if (best) return best;
+
+  // No score; default to the most recent run's first task so the user has a
+  // pointer rather than an orphan message.
+  const fallback = runs[0]?.tasks?.[0];
+  if (!fallback) return null;
+  return { score: 0, runId: runs[0].id, taskId: fallback.id, title: fallback.title };
+}
+
+function tokenize(value) {
+  return String(value || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2);
+}
+
+function truncate(value, max) {
+  const str = String(value || "");
+  return str.length > max ? `${str.slice(0, max - 1)}…` : str;
 }
 
 async function handleUserChat(message) {
