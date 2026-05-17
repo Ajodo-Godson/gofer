@@ -26,7 +26,10 @@ export const config = {
     projectId: process.env.SUPERMEMORY_PROJECT_ID || "gofer"
   },
   moss: {
-    apiKey: process.env.MOSS_API_KEY || ""
+    apiKey: process.env.MOSS_API_KEY || "",
+    projectId: process.env.MOSS_PROJECT_ID || "",
+    projectKey: process.env.MOSS_PROJECT_KEY || "",
+    indexName: process.env.MOSS_INDEX_NAME || "gofer-dental-call"
   },
   sponge: {
     apiKey: process.env.SPONGE_API_KEY || ""
@@ -52,7 +55,7 @@ export function integrationStatus() {
     browserUse: Boolean(config.demo.allowBrowserUseLiveTask && config.browserUse.apiKey),
     agentMail: Boolean(config.demo.allowRealEmailSend && config.agentMail.apiKey && config.agentMail.from),
     supermemory: Boolean(config.supermemory.apiKey),
-    moss: Boolean(config.moss.apiKey),
+    moss: Boolean(config.moss.projectId && config.moss.projectKey),
     sponge: Boolean(config.sponge.apiKey),
     stripe: Boolean(config.stripe.secretKey)
   };
