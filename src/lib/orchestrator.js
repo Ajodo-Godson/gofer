@@ -9,6 +9,7 @@ import { planTasks } from "./planner.js";
 import { buildBrowserPrompt, getWorkflowTemplate, workflowCatalog } from "./workflowTemplates.js";
 import {
   addArtifact,
+  addChatMessage,
   addMemory,
   completeSeedTask,
   createRun,
@@ -136,7 +137,7 @@ async function runWorkflowTemplateTask(runId, task) {
       kind: "browser",
       title: "Browser workflow result",
       detail: browser.result || "BrowserReconAgent completed workflow step.",
-      liveUrl: template.showLive ? browser.liveUrl : null,
+      liveUrl: template.showLive || task.constraints?.showBrowser ? browser.liveUrl : null,
       output: browser.output || browser.data?.output || null,
       actionRequired: browser.actionRequired || null,
       warning: browser.warning || null
@@ -148,13 +149,28 @@ async function runWorkflowTemplateTask(runId, task) {
     }
 
     if (template.id === "reservation.verify_availability" && isBrowserBudgetStop(browser)) {
+      const detail = "Online availability could not be verified within GOFER's browser budget. Approve the phone fallback and GOFER can call the restaurant to check 5:30 PM availability before booking.";
       addArtifact(runId, task.id, {
         kind: "approval",
         title: "Phone fallback approval required",
-        detail: "Online availability could not be verified within GOFER's browser budget. Approve the phone fallback and GOFER can call the restaurant to check 5:30 PM availability before booking.",
+        detail,
         approvalGates: task.approvalGates
       });
-      await finishTask(runId, task, "Online availability not verified. Approval required to call the restaurant before booking.");
+      addChatMessage(
+        "assistant",
+        `${detail} Reply \`yes\` to approve the phone fallback, or \`no\` to stop. I will not book or pay without your confirmation.`,
+        {
+          runId,
+          taskId: task.id,
+          action: "phone_fallback_approval_requested"
+        }
+      );
+      await markTaskPending(
+        runId,
+        task,
+        "Online availability not verified. Approval required to call the restaurant before booking.",
+        "Waiting for phone fallback approval"
+      );
       return;
     }
 
@@ -191,13 +207,37 @@ async function runRestaurantReservationFollowup(runId, task, browser) {
   const parsed = parseJsonMaybe(browser.output || browser.data?.output);
   const recommendation = parsed?.recommended_candidate?.name || parsed?.recommended_candidate || "best matching restaurant";
   const nextAction = parsed?.next_action || "Ask user to approve the recommended booking path before GOFER confirms a reservation.";
+  const candidateNames = (parsed?.candidates || [])
+    .map((candidate) => candidate?.name)
+    .filter(Boolean);
   addArtifact(runId, task.id, {
     kind: "approval",
     title: "Booking approval required",
     detail: `Recommended: ${recommendation}. ${nextAction}`,
     approvalGates: task.approvalGates
   });
-  await finishTask(runId, task, `Found reservation options. Approval required before booking: ${recommendation}.`);
+  addChatMessage(
+    "assistant",
+    [
+      `I found ${candidateNames.length || "several"} restaurant option${candidateNames.length === 1 ? "" : "s"}.`,
+      `Recommended: ${recommendation}.`,
+      candidateNames.length ? `Options: ${candidateNames.join(", ")}.` : "",
+      "Reply with the restaurant name, or reply `yes` to approve the recommendation. I will not book or pay without your confirmation."
+    ].filter(Boolean).join(" "),
+    {
+      runId,
+      taskId: task.id,
+      action: "booking_approval_requested",
+      recommendation,
+      candidates: candidateNames
+    }
+  );
+  await markTaskPending(
+    runId,
+    task,
+    `Found reservation options. Approval required before booking: ${recommendation}.`,
+    "Waiting for booking approval"
+  );
 }
 
 async function runAppointmentTask(runId, task) {
@@ -347,10 +387,10 @@ async function finishTask(runId, task, result) {
   });
 }
 
-async function markTaskPending(runId, task, result) {
+async function markTaskPending(runId, task, result, stage = "Waiting for provider confirmation") {
   updateTask(runId, task.id, {
     status: "pending",
-    stage: "Waiting for provider confirmation",
+    stage,
     result
   });
   addMemory(`${task.title}: ${result}`, "pending_task");
@@ -402,6 +442,10 @@ function hasUsableWorkflowOutput(parsed) {
 
 async function markBrowserApprovalPending(runId, task, template, parsed, browser) {
   const nextAction = parsed?.next_action || browser.actionRequired?.message || "User approval or intervention is required before GOFER can continue.";
+  const optionNames = (parsed?.options || parsed?.candidates || [])
+    .map((item) => item?.name)
+    .filter(Boolean);
+  const recommendation = parsed?.recommended_option || parsed?.recommended_candidate?.name || parsed?.recommended_candidate || null;
   addArtifact(runId, task.id, {
     kind: "approval",
     title: "Approval required",
@@ -409,6 +453,24 @@ async function markBrowserApprovalPending(runId, task, template, parsed, browser
     approvalGates: task.approvalGates,
     blockers: parsed?.blockers || browser.actionRequired?.blocker || null
   });
+  addChatMessage(
+    "assistant",
+    [
+      parsed?.status || `${template.label} needs your approval before GOFER continues.`,
+      recommendation ? `Recommended: ${recommendation}.` : "",
+      optionNames.length ? `Options: ${optionNames.join(", ")}.` : "",
+      nextAction,
+      "Reply with a choice, `yes` to approve the recommendation, or `no` to stop. I will not checkout, pay, book, or submit anything without your confirmation."
+    ].filter(Boolean).join(" "),
+    {
+      runId,
+      taskId: task.id,
+      action: "approval_requested",
+      workflowId: template.id,
+      recommendation,
+      options: optionNames
+    }
+  );
   await markTaskPending(runId, task, `${template.label} is waiting for approval: ${nextAction}`);
 }
 

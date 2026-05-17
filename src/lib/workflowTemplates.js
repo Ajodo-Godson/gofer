@@ -58,6 +58,48 @@ export const WORKFLOW_TEMPLATES = [
     ].join(" ")
   },
   {
+    id: "browser.product_options",
+    type: "product_discovery",
+    label: "Product options",
+    match: /(?=.*\b(order|buy|send|shop|look for|find|get)\b)(?=.*\b(flower|flowers|gift|target|best options|options)\b)(?=.*\b(don't checkout|do not checkout|no checkout|without checkout|just give me|options|best options)\b)/i,
+    tools: ["browserUse", "supermemory", "agentMail"],
+    approvalGates: ["cart_build", "payment", "order_submission"],
+    agents: ["browser-recon", "memory-legal"],
+    browserCapability: "product-discovery",
+    model: "bu-mini",
+    maxSteps: 12,
+    maxRuntimeMs: 100000,
+    maxCostUsd: 0.3,
+    showLive: false,
+    outputSchema: actionWorkflowSchema({
+      merchant: { type: "string" },
+      recommended_option: { type: "string" },
+      options: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            price: { type: "string" },
+            why_it_fits: { type: "string" },
+            url_or_path: { type: "string" },
+            availability: { type: "string" }
+          }
+        }
+      }
+    }),
+    browserPrompt: ({ task }) => [
+      "You are GOFER's BrowserReconAgent. Research product options only. Do not add anything to cart unless the user explicitly asked for cart building.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, or fee requires explicit user confirmation first.",
+      `User request: ${task.title}`,
+      "If a merchant is named, start there. For Target flower requests, search Target for flower bouquets, arrangements, plants, or giftable floral items that fit the recipient.",
+      "Find 3 to 5 strong options. Prefer items with visible price, availability, delivery or pickup path, and a useful product page.",
+      "Do not checkout, do not enter payment, do not place an order, and do not click final purchase buttons.",
+      "Return approval_required=true because the user must choose an option before GOFER builds a cart.",
+      "Return JSON with: status, approval_required, merchant, recommended_option, options, next_action, blockers."
+    ].join(" ")
+  },
+  {
     id: "browser.purchase_until_checkout",
     type: "purchase",
     label: "Browser checkout",

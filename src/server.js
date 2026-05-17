@@ -9,7 +9,7 @@ import { isBrowserUseDemoRunning, startBrowserUseDemo } from "./lib/browserUseDe
 import { startDemoRun, startManualRun } from "./lib/orchestrator.js";
 import { importTasksFromSource } from "./lib/taskSource.js";
 import { saveMemory } from "./integrations/memory.js";
-import { addChatMessage, bus, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks } from "./lib/store.js";
+import { addChatMessage, bus, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks, updateRun, updateTask } from "./lib/store.js";
 import { appointmentVoiceReply, summarizeCallState } from "./lib/voiceController.js";
 
 const root = process.cwd();
@@ -211,6 +211,15 @@ async function handleUserChat(message) {
   const approval = latestApprovalArtifact(task);
   const authHandoff = latestAuthHandoff(task);
 
+  if (isNewErrandRequest(message)) {
+    const reply = "Starting that as a new GOFER errand. I will return options first and stop before checkout, payment, booking, or any final submission.";
+    addChatMessage("assistant", reply, { action: "new_errand_from_chat", priorRunId: activeRun?.id || null });
+    startManualRun(message).catch((error) => {
+      emit("run.error", { error: error.message });
+    });
+    return reply;
+  }
+
   if (!task || (!approval && !authHandoff)) {
     const reply = "I do not have a pending approval gate right now. Dispatch an errand first, then reply here to approve, change, or continue it.";
     addChatMessage("assistant", reply);
@@ -220,6 +229,16 @@ async function handleUserChat(message) {
   if (isNegative(message)) {
     const reply = "Got it. I will not proceed. Tell me what to change, or dispatch a new errand.";
     addChatMessage("assistant", reply, { runId: activeRun.id, taskId: task.id, action: "approval_declined" });
+    updateTask(activeRun.id, task.id, {
+      status: "cancelled",
+      stage: "Approval declined",
+      result: "User declined the pending approval gate."
+    });
+    updateRun(activeRun.id, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      summary: "Approval declined. GOFER stopped before taking the next action."
+    });
     emit("approval.declined", { runId: activeRun.id, taskId: task.id, message });
     return reply;
   }
@@ -236,7 +255,7 @@ async function handleUserChat(message) {
   if (isAffirmative(message) || selected) {
     const restaurant = selected || approval.recommendation || "the recommended option";
     const followup = buildFollowupTask(task, restaurant);
-    const reply = `Proceeding with ${restaurant}. I am starting the next step now: verify availability and prepare the booking path.`;
+    const reply = buildApprovalAcceptedReply(task, restaurant);
     addChatMessage("assistant", reply, {
       runId: activeRun.id,
       taskId: task.id,
@@ -250,7 +269,7 @@ async function handleUserChat(message) {
     return reply;
   }
 
-  const reply = "I found a pending approval gate, but I could not tell which option you want. Reply with the restaurant name, or say yes to approve the recommended option.";
+  const reply = "I found a pending approval gate, but I could not tell which option you want. Reply with the option name, or say yes to approve the recommended option.";
   addChatMessage("assistant", reply, { runId: activeRun.id, taskId: task.id, action: "approval_clarify" });
   return reply;
 }
@@ -353,17 +372,19 @@ async function handleAuthChat({ message, activeRun, task, authHandoff }) {
 }
 
 function latestApprovalArtifact(task) {
-  if (!task) return null;
+  if (!task || !["pending", "running"].includes(task.status)) return null;
   const artifact = [...(task.artifacts || [])].reverse().find((item) => item.kind === "approval");
   if (!artifact) return null;
+  const browserArtifact = [...(task.artifacts || [])].reverse().find((item) => item.kind === "browser" && item.output);
+  const parsed = parseJsonMaybe(browserArtifact?.output);
   return {
     artifact,
-    recommendation: parseRecommendation(artifact.detail)
+    recommendation: parseRecommendation(artifact.detail) || parsed?.recommended_option || parsed?.recommended_candidate?.name || parsed?.recommended_candidate || null
   };
 }
 
 function latestAuthHandoff(task) {
-  if (!task) return null;
+  if (!task || !["pending", "running"].includes(task.status)) return null;
   for (const artifact of [...(task.artifacts || [])].reverse()) {
     const parsed = parseJsonMaybe(artifact.output);
     const liveUrl = artifact.liveUrl || artifact.live_url || null;
@@ -398,16 +419,35 @@ function selectCandidateFromMessage(task, message) {
   const text = message.toLowerCase();
   for (const artifact of task.artifacts || []) {
     const parsed = parseJsonMaybe(artifact.output);
-    const candidates = parsed?.candidates || [];
+    const candidates = [...(parsed?.candidates || []), ...(parsed?.options || [])];
     const match = candidates.find((candidate) => candidate?.name && text.includes(candidate.name.toLowerCase()));
     if (match) return match.name;
   }
   return null;
 }
 
+function buildApprovalAcceptedReply(task, selected) {
+  if (task.type === "restaurant_reservation") {
+    if (/phone fallback|call the restaurant|online availability not verified/i.test(`${task.result || ""} ${task.stage || ""}`)) {
+      return `Approved. I am starting the phone fallback for ${selected}. I will only check availability and will not book or pay without another confirmation.`;
+    }
+    return `Proceeding with ${selected}. I am starting the next step now: verify availability and prepare the booking path.`;
+  }
+  if (task.type === "product_discovery") {
+    return `Proceeding with ${selected}. I am starting the cart-prep step now and will stop before checkout, payment, or order submission.`;
+  }
+  return `Proceeding with ${selected}. I am starting the approved next step now and will stop before any irreversible action.`;
+}
+
 function buildFollowupTask(task, selected) {
   if (task.type === "restaurant_reservation") {
+    if (/phone fallback|call the restaurant|online availability not verified/i.test(`${task.result || ""} ${task.stage || ""}`)) {
+      return `Call ${selected} to check availability for this approved reservation request: ${task.title}. Ask for 5:30 PM for 3 people tonight. Do not finalize the booking, accept a deposit, or make payment without user confirmation.`;
+    }
     return `Verify live availability and prepare booking for ${selected} for this request: ${task.title}. Do not finalize the booking or submit payment without approval.`;
+  }
+  if (task.type === "product_discovery") {
+    return `Build a cart for ${selected} for this approved shopping request: ${task.title}. Stop before checkout, payment, delivery confirmation, or final order submission.`;
   }
   return `Continue this approved GOFER task for ${selected}: ${task.title}. Stop before any irreversible action.`;
 }
@@ -434,6 +474,14 @@ function isAffirmative(message) {
 
 function isNegative(message) {
   return /\b(no|stop|cancel|do not|don't|hold off|decline)\b/i.test(message);
+}
+
+function isNewErrandRequest(message) {
+  const text = message.trim();
+  if (!text) return false;
+  if (isAffirmative(text)) return false;
+  if (/^(no|nope|stop|cancel|do not|don't|hold off|decline)\b[.! ]*$/i.test(text)) return false;
+  return /\b(let'?s|please|can you|could you|find|book|order|buy|send|shop|look for|search for|get|schedule|call|email|draft|dispute|fill)\b/i.test(text);
 }
 
 function parseJsonMaybe(value) {

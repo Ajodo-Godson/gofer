@@ -40,7 +40,8 @@ function inferConstraints(raw, user) {
     insurance: /dentist|dental|cleaning/i.test(text) ? user.insurance : null,
     notes: raw.notes || "",
     providerHint: /carl/i.test(text) ? "drCarl" : null,
-    explicitPhone: extractPhone(text)
+    explicitPhone: extractPhone(text),
+    showBrowser: /see what (you|it).*(seeing|doing)|watch|show.*browser|live browser/i.test(text)
   };
 }
 
