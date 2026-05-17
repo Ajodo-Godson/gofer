@@ -9,6 +9,7 @@ import { isBrowserUseDemoRunning, startBrowserUseDemo } from "./lib/browserUseDe
 import { startDemoRun, startManualRun } from "./lib/orchestrator.js";
 import { importTasksFromSource } from "./lib/taskSource.js";
 import { saveMemory } from "./integrations/memory.js";
+import { parseInboundEmailEvent, verifyAgentMailSignature } from "./integrations/agentmail.js";
 import { addChatMessage, bus, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks, updateRun, updateTask } from "./lib/store.js";
 import { appointmentVoiceReply, summarizeCallState } from "./lib/voiceController.js";
 
@@ -119,6 +120,13 @@ const server = createServer(async (req, res) => {
       return handleAgentPhoneWebhook(req, res);
     }
 
+    if (
+      ["/api/agentmail/webhook", "/webhooks/agentmail"].includes(url.pathname) &&
+      req.method === "POST"
+    ) {
+      return handleAgentMailWebhook(req, res);
+    }
+
     if (url.pathname === "/api/events") {
       return eventStream(req, res);
     }
@@ -201,6 +209,65 @@ function verifyAgentPhoneSignature(rawBody, signature) {
   const expectedBuffer = Buffer.from(expected);
   const signatureBuffer = Buffer.from(signature);
   return expectedBuffer.length === signatureBuffer.length && timingSafeEqual(expectedBuffer, signatureBuffer);
+}
+
+async function handleAgentMailWebhook(req, res) {
+  // Read body with a hard cap so the endpoint is not a free DoS target.
+  // 1 MB is well above AgentMail's typical message-received payload but
+  // bounded enough that a misbehaving caller cannot exhaust memory.
+  const limit = 1 * 1024 * 1024;
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > limit) {
+      return json(res, { error: "Request body too large" }, 413);
+    }
+    chunks.push(chunk);
+  }
+  const rawBody = Buffer.concat(chunks);
+
+  // Fail closed: refuse to act on unsigned events. Webhook secret is required.
+  if (!config.agentMail.webhookSecret) {
+    return json(res, { error: "AgentMail webhook secret not configured" }, 503);
+  }
+  const verification = verifyAgentMailSignature(rawBody, req.headers);
+  if (!verification.ok) {
+    return json(res, { error: "Invalid webhook signature" }, 401);
+  }
+
+  let payload;
+  try {
+    payload = rawBody.length ? JSON.parse(rawBody.toString("utf8")) : {};
+  } catch {
+    return json(res, { error: "Invalid JSON" }, 400);
+  }
+
+  const inbound = parseInboundEmailEvent(payload);
+  if (!inbound) {
+    // Ack non-message events so AgentMail does not retry, but emit a low-noise
+    // event so we can see what came through.
+    emit("agentmail.webhook", {
+      eventType: payload?.event_type || payload?.eventType || "unknown",
+      handled: false
+    });
+    return json(res, { ok: true, handled: false });
+  }
+
+  emit("agentmail.received", {
+    eventType: inbound.eventType,
+    eventId: inbound.eventId,
+    inboxId: inbound.inboxId,
+    threadId: inbound.threadId,
+    messageId: inbound.messageId,
+    inReplyTo: inbound.inReplyTo,
+    from: inbound.from,
+    subject: inbound.subject,
+    preview: inbound.preview,
+    receivedAt: inbound.receivedAt
+  });
+
+  return json(res, { ok: true, handled: true });
 }
 
 async function handleUserChat(message) {

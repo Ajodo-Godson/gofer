@@ -222,5 +222,22 @@ function compactPayload(type, payload) {
       count: payload.tasks?.length || 0
     };
   }
+  if (type === "agentmail.received") {
+    return {
+      eventType: payload.eventType,
+      threadId: payload.threadId || null,
+      messageId: payload.messageId || null,
+      inReplyTo: payload.inReplyTo || null,
+      from: payload.from || null,
+      subject: payload.subject || null,
+      preview: payload.preview || null
+    };
+  }
+  if (type === "agentmail.webhook") {
+    return {
+      eventType: payload.eventType,
+      handled: Boolean(payload.handled)
+    };
+  }
   return clone(payload);
 }

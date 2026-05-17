@@ -17,7 +17,8 @@ export const config = {
   agentMail: {
     apiKey: process.env.AGENTMAIL_API_KEY || "",
     from: process.env.AGENTMAIL_FROM || process.env.AGENTMAIL_INBOX_ID || "",
-    inboxId: process.env.AGENTMAIL_INBOX_ID || ""
+    inboxId: process.env.AGENTMAIL_INBOX_ID || "",
+    webhookSecret: process.env.AGENTMAIL_WEBHOOK_SECRET || ""
   },
   supermemory: {
     apiKey: process.env.SUPERMEMORY_API_KEY || "",
