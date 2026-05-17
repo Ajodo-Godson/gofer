@@ -6,6 +6,7 @@ This file tracks how to make GOFER use sponsor tools as real infrastructure inst
 
 - Do not mark a sponsor path as live unless the integration returns a real provider response.
 - Do not invent confirmations. If a booking, payment, email, or call outcome is pending, show it as pending.
+- Never charge, authorize, hold, submit, or prepare payment/card/wallet/deposit flows without explicit user confirmation for that exact task.
 - Every workflow should record which agent performed the work, which integration was used, and what proof was returned.
 - Every irreversible action needs an approval gate before final submission.
 - Prefer reusable workflow templates over one-off prompts.

@@ -143,6 +143,17 @@ async function handleMemoryJob(job) {
 }
 
 async function handlePaymentJob(job) {
+  if (!job.payload?.approvalToken) {
+    return {
+      mode: "blocked",
+      provider: "PaymentAgent",
+      success: false,
+      status: "approval_required",
+      amount: job.payload?.amount,
+      description: job.payload?.description,
+      blocker: "User payment confirmation is required before the PaymentAgent can run this job."
+    };
+  }
   return chargeAgentWallet(job.payload);
 }
 

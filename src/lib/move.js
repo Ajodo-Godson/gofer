@@ -179,22 +179,23 @@ async function runLegalMemory(runId, task) {
 }
 
 async function runMoneyRail(runId, task) {
-  updateTask(runId, task.id, { status: "running", stage: "Preparing agent payment rail" });
-  const payment = await dispatchAgentJob("payment", "wallet-charge", {
-    amount: 0.35,
-    description: "MOVE demo application-fee authorization"
-  });
+  updateTask(runId, task.id, { status: "running", stage: "Requesting payment approval" });
   addArtifact(runId, task.id, {
-    kind: "payment",
-    title: "Sponge wallet authorization",
-    detail: `$${payment.amount} application-fee authorization prepared from agent wallet.`
+    kind: "approval",
+    title: "Payment confirmation required",
+    detail: "MOVE needs user confirmation before preparing any Sponge wallet authorization or Stripe payment flow.",
+    approvalGates: ["payment"]
   });
   addArtifact(runId, task.id, {
     kind: "stripe",
     title: "Stripe success fee",
-    detail: "Success-fee Payment Intent staged for $200 after signed lease."
+    detail: "Success-fee flow identified, but no Payment Intent is created before user confirmation."
   });
-  complete(runId, task, "Application fee authorized; success fee staged.");
+  updateTask(runId, task.id, {
+    status: "pending",
+    stage: "Waiting for payment confirmation",
+    result: "Payment rail is blocked until user confirms the exact amount and merchant."
+  });
 }
 
 function complete(runId, task, result) {

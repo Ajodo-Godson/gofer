@@ -17,6 +17,7 @@ export const WORKFLOW_TEMPLATES = [
     browserPrompt: ({ task, user }) => [
       "You are GOFER's BrowserReconAgent. Verify the booking path for the specific restaurant in this approved follow-up.",
       "You may open the restaurant website, OpenTable, Resy, Toast, or another official reservation page if needed.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, or fee requires explicit user confirmation first.",
       "Do not finalize the reservation, submit payment, enter card details, create an account, or click a final confirmation button.",
       `Approved follow-up: ${task.title}`,
       `User home/base context: ${user.address || user.zip || "unknown"}.`,
@@ -81,6 +82,7 @@ export const WORKFLOW_TEMPLATES = [
     }),
     browserPrompt: ({ task }) => [
       "You are GOFER's BrowserReconAgent. Build a purchase cart but do not submit payment or final order.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, or fee requires explicit user confirmation first.",
       `User request: ${task.title}`,
       "Find the requested product/service, select reasonable defaults, add to cart, and stop at checkout review.",
       "Never claim an order was placed unless the site itself shows a completed order confirmation after explicit approval. In this workflow there is no such approval, so stop before that point.",
@@ -115,6 +117,7 @@ export const WORKFLOW_TEMPLATES = [
     }),
     browserPrompt: ({ task, user }) => [
       "You are GOFER's BrowserReconAgent. Fill the requested form using known user details, but stop before submitting sensitive or irreversible data.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, or fee requires explicit user confirmation first.",
       `User request: ${task.title}`,
       `Known user profile: ${JSON.stringify(redactUserForPrompt(user))}`,
       "If the form asks for payment, SSN, government ID, medical secrets, OAuth, or irreversible submission, stop and return approval_required=true.",
@@ -156,6 +159,7 @@ export const WORKFLOW_TEMPLATES = [
     }),
     browserPrompt: ({ task, user }) => [
       "You are GOFER's BrowserReconAgent. Prepare a billing dispute, but do not submit it.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, or fee requires explicit user confirmation first.",
       `User request: ${task.title}`,
       `Known user context: ${JSON.stringify(redactUserForPrompt(user))}`,
       "Find the relevant bill/charge if accessible. Identify the disputed amount and draft the dispute language.",
@@ -187,6 +191,7 @@ export function detectWorkflow(text) {
     }),
     browserPrompt: ({ task }) => [
       "You are GOFER's BrowserReconAgent. Complete the reversible research/action steps for this errand.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, or fee requires explicit user confirmation first.",
       `User request: ${task.title}`,
       "Do not make payments, submit final orders, create accounts, or make irreversible commitments.",
       "Return JSON with: status, approval_required, completed_steps, next_action, blockers."
