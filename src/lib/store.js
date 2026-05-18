@@ -43,6 +43,17 @@ export function resetDemoTasks() {
   emit("notion.reset", { tasks: state.tasks });
 }
 
+export function clearRuns() {
+  state.runs = [];
+  state.activeRunId = null;
+  emit("runs.cleared", {});
+}
+
+export function clearChat() {
+  state.chat = [];
+  emit("chat.cleared", {});
+}
+
 export function getState() {
   return state;
 }

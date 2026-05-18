@@ -55,11 +55,14 @@ els.manualTaskForm.addEventListener("submit", async (event) => {
   if (!title) return;
   els.manualTaskSubmit.disabled = true;
   els.manualTaskSubmit.textContent = "Dispatching...";
+  els.manualTaskInput.value = "";
   await fetch("/api/run-task", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title })
   });
+  els.manualTaskSubmit.disabled = false;
+  els.manualTaskSubmit.textContent = "Dispatch";
   await refresh();
 });
 
@@ -187,9 +190,12 @@ function renderChecklist() {
 
 function renderRun() {
   const run = state.data.runs[0];
+  const isActive = run && ["running", "waiting_for_approval", "completed_with_errors"].includes(run.status);
+
   if (!run) {
     els.runStatus.textContent = "Idle";
     els.runStatus.className = "badge";
+    els.agentLanes.innerHTML = "";
     return;
   }
 
@@ -206,11 +212,30 @@ function renderRun() {
   els.testBrowserUse.textContent = browserRunning ? "Browser running..." : "Find DoorDash Options";
 
   els.agentLanes.className = "lanes";
-  els.agentLanes.innerHTML = run.tasks.map(renderLane).join("");
+  if (isActive) {
+    els.agentLanes.innerHTML = run.tasks.map(renderLane).join("");
+  } else {
+    els.agentLanes.innerHTML = `<div class="lanes-done">Last run ${escapeHtml(run.status)}. <button class="cancel-btn" onclick="clearRuns()">Clear</button></div>`;
+  }
 }
 
-async function cancelTask() {
+async function clearRuns() {
+  await fetch("/api/clear-runs", { method: "POST" });
+  await refresh();
+}
+
+async function clearChat() {
+  await fetch("/api/clear-chat", { method: "POST" });
+  await refresh();
+}
+
+let _cancelling = false;
+async function cancelTask(btn) {
+  if (_cancelling) return;
+  _cancelling = true;
+  if (btn) { btn.disabled = true; btn.textContent = "Cancelling..."; }
   await fetch("/api/cancel-task", { method: "POST" });
+  _cancelling = false;
   await refresh();
 }
 
@@ -225,7 +250,7 @@ function renderLane(task) {
           <div class="subtle">${escapeHtml(task.label)} · ${escapeHtml(task.source)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
-          ${canCancel ? `<button class="cancel-btn" onclick="cancelTask()">Cancel</button>` : ""}
+          ${canCancel ? `<button class="cancel-btn" onclick="cancelTask(this)">Cancel</button>` : ""}
           <span class="status ${task.status}">${escapeHtml(task.status)}</span>
         </div>
       </div>
@@ -430,11 +455,10 @@ function renderAgentProcesses() {
 }
 
 function renderMemory() {
-  els.memory.innerHTML = state.data.memory
-    .slice(-8)
-    .reverse()
-    .map((item) => `<div class="memory-item">${escapeHtml(item.content)}</div>`)
-    .join("");
+  const items = state.data.memory.slice(-5).reverse();
+  els.memory.innerHTML = items.length
+    ? items.map((item) => `<div class="memory-item">${escapeHtml(item.content)}</div>`).join("")
+    : `<div class="empty-state" style="min-height:60px">No memories yet.</div>`;
 }
 
 function renderEvents() {

@@ -9,7 +9,7 @@ import { isBrowserUseDemoRunning, startBrowserUseDemo } from "./lib/browserUseDe
 import { startDemoRun, startManualRun } from "./lib/orchestrator.js";
 import { importTasksFromSource } from "./lib/taskSource.js";
 import { saveMemory } from "./integrations/memory.js";
-import { addArtifact, addChatMessage, addMemory, bus, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks, updateRun, updateTask } from "./lib/store.js";
+import { addArtifact, addChatMessage, addMemory, bus, clearChat, clearRuns, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks, updateRun, updateTask } from "./lib/store.js";
 import { summarizeCallState, voiceReply } from "./lib/voiceController.js";
 
 const root = process.cwd();
@@ -59,11 +59,17 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const title = String(body.title || "").trim();
       if (!title) return json(res, { ok: false, error: "Task title is required." }, 400);
+      clearChat();
       json(res, { ok: true, message: "GOFER manual task started." });
       startManualRun(title).catch((error) => {
         emit("run.error", { error: error.message });
       });
       return;
+    }
+
+    if (url.pathname === "/api/clear-chat" && req.method === "POST") {
+      clearChat();
+      return json(res, { ok: true });
     }
 
     if (url.pathname === "/api/chat" && req.method === "POST") {
@@ -90,11 +96,16 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (url.pathname === "/api/clear-runs" && req.method === "POST") {
+      clearRuns();
+      return json(res, { ok: true });
+    }
+
     if (url.pathname === "/api/cancel-task" && req.method === "POST") {
       const state = getState();
       const activeRun = state.runs[0];
       const task = activeRun?.tasks?.find((t) => ["pending", "running"].includes(t.status));
-      if (!task) return json(res, { ok: false, error: "No active task to cancel." }, 404);
+      if (!task) return json(res, { ok: false, error: "No active task to cancel." });
       updateTask(activeRun.id, task.id, {
         status: "cancelled",
         stage: "Cancelled",
