@@ -90,6 +90,25 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (url.pathname === "/api/cancel-task" && req.method === "POST") {
+      const state = getState();
+      const activeRun = state.runs[0];
+      const task = activeRun?.tasks?.find((t) => ["pending", "running"].includes(t.status));
+      if (!task) return json(res, { ok: false, error: "No active task to cancel." }, 404);
+      updateTask(activeRun.id, task.id, {
+        status: "cancelled",
+        stage: "Cancelled",
+        result: "Cancelled by user."
+      });
+      updateRun(activeRun.id, {
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        summary: "Task cancelled by user."
+      });
+      emit("task.cancelled", { runId: activeRun.id, taskId: task.id });
+      return json(res, { ok: true });
+    }
+
     if (url.pathname === "/api/test-browser-use" && req.method === "POST") {
       if (isBrowserUseDemoRunning()) {
         return json(res, { ok: false, message: "Browser Use demo is already running." }, 409);
@@ -426,6 +445,28 @@ async function handleUserChat(message) {
     startManualRun(message).catch((error) => {
       emit("run.error", { error: error.message });
     });
+    return reply;
+  }
+
+  if (/^\s*cancel\s*$/i.test(message)) {
+    if (task && ["pending", "running"].includes(task.status)) {
+      updateTask(activeRun.id, task.id, {
+        status: "cancelled",
+        stage: "Cancelled",
+        result: "Cancelled by user."
+      });
+      updateRun(activeRun.id, {
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        summary: "Task cancelled by user."
+      });
+      emit("task.cancelled", { runId: activeRun.id, taskId: task.id });
+      const reply = "Task cancelled. GOFER stopped all pending work.";
+      addChatMessage("assistant", reply, { runId: activeRun.id, taskId: task.id, action: "task_cancelled" });
+      return reply;
+    }
+    const reply = "Nothing active to cancel right now.";
+    addChatMessage("assistant", reply);
     return reply;
   }
 
@@ -789,6 +830,12 @@ function buildFollowupTask(task, selected) {
     return `Verify live availability and prepare booking for ${selected} for this request: ${task.title}. Do not finalize the booking or submit payment without approval.`;
   }
   if (task.type === "product_discovery") {
+    if (/ubereats|uber\s+eats/i.test(task.title)) {
+      return `Build a UberEats cart for ${selected} on ubereats for this approved request: ${task.title}. Stop before checkout, payment, or order submission.`;
+    }
+    if (/doordash/i.test(task.title)) {
+      return `Build a DoorDash cart for ${selected} on doordash for this approved request: ${task.title}. Stop before checkout, payment, or order submission.`;
+    }
     return `Build a cart for ${selected} for this approved shopping request: ${task.title}. Stop before checkout, payment, delivery confirmation, or final order submission.`;
   }
   return `Continue this approved GOFER task for ${selected}: ${task.title}. Stop before any irreversible action.`;

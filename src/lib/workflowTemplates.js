@@ -141,7 +141,8 @@ export const WORKFLOW_TEMPLATES = [
       `User request: ${task.title}`,
       `User base/location context: ${user.address || user.zip || "unknown"}.`,
       "If the user explicitly mentions DoorDash, open https://www.doordash.com/ directly and use DoorDash visible search/results/menu controls. Do not use Google, DuckDuckGo, Yelp, Maps, or broad web search for explicit DoorDash requests.",
-      "For non-DoorDash food requests, use the fastest direct source available: the restaurant ordering page, DoorDash-style result page, or search snippets if no direct merchant is named.",
+      "If the user explicitly mentions UberEats or Uber Eats, open https://www.ubereats.com/ directly and use UberEats visible search/results/menu controls. Do not use broad web search for explicit UberEats requests.",
+      "For non-DoorDash, non-UberEats food requests, use the fastest direct source available: the restaurant ordering page, a delivery-style result page, or search snippets if no direct merchant is named.",
       "Do not add to cart, open checkout, enter delivery/payment details, or place an order.",
       "If a restaurant is named, find that restaurant's ordering/menu options and likely delivery or pickup channel.",
       "If DoorDash asks for location, use the user base/location context. If it asks for login/OAuth/verification/CAPTCHA, stop and return approval_required=true with the exact blocker.",
@@ -193,6 +194,47 @@ export const WORKFLOW_TEMPLATES = [
       "Add exactly one item to the cart, then stop at cart or checkout review.",
       "If item clicks do not open a customization/add-item dialog after two attempts, stop and return approval_required=true with blocker='menu_item_not_clickable' and the item you tried.",
       "If OAuth, phone verification, CAPTCHA, account creation, payment, card entry, or final place-order confirmation appears, stop immediately and return approval_required=true.",
+      "Return JSON with: status, approval_required, auth_required, merchant, selected_items, subtotal, checkout_state, next_action, blockers."
+    ].join(" ")
+  },
+  {
+    id: "food.ubereats_cart_build",
+    type: "purchase",
+    label: "UberEats cart build",
+    match: /(ubereats|uber\s+eats|uber).*(cart|checkout|add.*cart|build.*cart)|(cart|checkout|add.*cart|build.*cart).*(ubereats|uber\s+eats)/i,
+    tools: ["browserUse", "sponge", "supermemory", "agentMail"],
+    approvalGates: ["payment", "order_submission"],
+    agents: ["browser-recon", "payment", "email-application", "memory-legal"],
+    browserCapability: "ubereats-cart-build",
+    model: "bu-mini",
+    maxSteps: 20,
+    maxRuntimeMs: 180000,
+    maxCostUsd: 0.75,
+    showLive: true,
+    outputSchema: actionWorkflowSchema({
+      merchant: { type: "string" },
+      selected_items: {
+        type: "array",
+        items: { type: "string" }
+      },
+      subtotal: { type: "string" },
+      checkout_state: { type: "string" },
+      auth_required: { type: "boolean" }
+    }),
+    browserPrompt: ({ task, user }) => [
+      "You are GOFER's BrowserReconAgent. Build a UberEats cart only. This is not restaurant discovery and not a table reservation.",
+      "Use the approved synced Browser Use profile if available. Do not start a new login flow unless the existing session has expired.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, tip confirmation, or order submission requires explicit user confirmation first.",
+      `User request: ${task.title}`,
+      `Delivery/location context if UberEats asks: ${user.address || user.zip || "680 Folsom St, San Francisco, CA"}.`,
+      "Open https://www.ubereats.com/ directly. Do not use broad web search.",
+      "Extract the restaurant name and item from the user request.",
+      "If UberEats asks for a delivery address, enter the provided location context.",
+      "Search for the named restaurant on UberEats. Navigate to its menu.",
+      "Find the specified item. If customization is required, choose the first reasonable default options.",
+      "Add exactly one item to the cart, then stop at cart or checkout review before payment or order submission.",
+      "If item clicks do not open a customization dialog after two attempts, stop and return approval_required=true with the item you tried.",
+      "If OAuth, phone verification, CAPTCHA, account creation, payment, card entry, or final place-order appears, stop immediately and return approval_required=true.",
       "Return JSON with: status, approval_required, auth_required, merchant, selected_items, subtotal, checkout_state, next_action, blockers."
     ].join(" ")
   },
@@ -362,6 +404,9 @@ function inferWorkflowId(text) {
   if (signals.doordashIntent && (signals.cartPrepIntent || (signals.checkoutIntent && !signals.discoveryOnly))) {
     return "food.doordash_cart_build";
   }
+  if (signals.uberEatsIntent && (signals.cartPrepIntent || (signals.checkoutIntent && !signals.discoveryOnly))) {
+    return "food.ubereats_cart_build";
+  }
   if (signals.shoppingIntent && (signals.cartPrepIntent || (signals.checkoutIntent && !signals.discoveryOnly))) {
     return "browser.purchase_until_checkout";
   }
@@ -420,6 +465,7 @@ function readIntentSignals(value) {
   const appointmentIntent = /\b(appointment|dentist|doctor|haircut|cleaning|schedule|book a time|book an appointment)\b/.test(text);
   const cuisineOrRestaurant = /\b(restaurant|dinner|chinese|italian|sushi|mexican|thai|indian|korean|pizza|mediterranean|latin|asian|rotisserie)\b/.test(text);
   const doordashIntent = /\bdoordash\b/.test(text);
+  const uberEatsIntent = /\buber\s*eats\b|\bubereats\b/i.test(text);
   const reservationIntent = /\b(book|reserve|reservation|table|party of|for \d+ people|team dinner|opentable|resy)\b/.test(text) ||
     (cuisineOrRestaurant && /\b(tonight|tomorrow|around \d|at \d{1,2}(?::\d{2})?\s*(?:am|pm))\b/.test(text));
   const foodOrderIntent = /\b(doordash|order\s+(?:some\s+)?food|food order|food delivery|takeout|pickup|delivery|deliver|menu|meal|lunch|dinner order|check.*restaurant|restaurant.*order)\b/.test(text) ||
@@ -437,6 +483,7 @@ function readIntentSignals(value) {
     callIntent,
     appointmentIntent,
     doordashIntent,
+    uberEatsIntent,
     foodOrderIntent,
     reservationIntent,
     shoppingIntent,

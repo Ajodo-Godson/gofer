@@ -209,8 +209,14 @@ function renderRun() {
   els.agentLanes.innerHTML = run.tasks.map(renderLane).join("");
 }
 
+async function cancelTask() {
+  await fetch("/api/cancel-task", { method: "POST" });
+  await refresh();
+}
+
 function renderLane(task) {
   const artifacts = (task.artifacts || []).filter((artifact) => artifact.kind !== "workflow");
+  const canCancel = ["pending", "running"].includes(task.status);
   return `
     <article class="lane">
       <div class="lane-head">
@@ -218,7 +224,10 @@ function renderLane(task) {
           <h3>${escapeHtml(task.title)}</h3>
           <div class="subtle">${escapeHtml(task.label)} · ${escapeHtml(task.source)}</div>
         </div>
-        <span class="status ${task.status}">${escapeHtml(task.status)}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${canCancel ? `<button class="cancel-btn" onclick="cancelTask()">Cancel</button>` : ""}
+          <span class="status ${task.status}">${escapeHtml(task.status)}</span>
+        </div>
       </div>
       <div class="tools">
         ${task.tools.map((tool) => `<span class="tool">${escapeHtml(tool)}</span>`).join("")}

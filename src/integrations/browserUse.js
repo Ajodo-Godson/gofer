@@ -477,7 +477,7 @@ async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputS
 function shouldUseBrowserProfile(metadata = {}) {
   if (metadata.useBrowserProfile === true || metadata.profileApproved === true) return true;
   if (!config.browserUse.profileId) return false;
-  const foodCapabilities = ["food-order-discovery", "doordash-cart-build", "doordash-discovery", "doordash-cart-demo"];
+  const foodCapabilities = ["food-order-discovery", "doordash-cart-build", "doordash-discovery", "doordash-cart-demo", "ubereats-cart-build"];
   return foodCapabilities.includes(metadata.capability || "");
 }
 
