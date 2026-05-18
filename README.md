@@ -2,7 +2,7 @@
 
 **Autonomous errand agents that make phone calls, browse authenticated sites, send emails, and handle payments — in parallel — with your approval before anything irreversible happens.**
 
-Built at the AI Tinkerers Hackathon, San Francisco, May 2026.
+Built at the Call My Agent Hackathon (YC), May 2026.
 
 **Live demo: https://inspiring-forgiveness-production-eb79.up.railway.app**
 
@@ -129,4 +129,4 @@ Copy the returned profile ID into `BROWSER_USE_PROFILE_ID` in `.env` and restart
 
 ## Team
 
-Built by Godson Ajodo at the AI Tinkerers Hackathon, San Francisco, May 2026.
+Built by Godson Ajodo, Jiyun, Carl, and Elijah at the Call My Agent Hackathon (YC), May 2026.
