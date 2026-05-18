@@ -236,6 +236,9 @@ function renderArtifact(artifact) {
   const recordingUrls = Array.isArray(artifact.recordingUrls)
     ? artifact.recordingUrls.filter((url) => typeof url === "string" && url.length > 0)
     : [];
+  const memoryMatches = Array.isArray(artifact.matches)
+    ? artifact.matches.filter((match) => match && typeof match.content === "string")
+    : [];
   return `
     <div class="artifact">
       <div>
@@ -246,9 +249,31 @@ function renderArtifact(artifact) {
         ${artifact.warning ? `<div class="warning">${escapeHtml(artifact.warning)}</div>` : ""}
         ${liveUrl ? renderLiveLink(liveUrl) : ""}
         ${recordingUrls.length ? renderRecordingLinks(recordingUrls) : ""}
+        ${memoryMatches.length ? renderMemoryMatches(memoryMatches) : ""}
       </div>
     </div>
   `;
+}
+
+function renderMemoryMatches(matches) {
+  return `
+    <div class="memory-matches">
+      ${matches.map((match) => `
+        <div class="memory-match">
+          <div class="memory-match-head">
+            ${match.title ? `<strong>${escapeHtml(match.title)}</strong>` : `<strong>Memory match</strong>`}
+            ${typeof match.score === "number" ? `<span class="subtle">score ${escapeHtml(match.score)}</span>` : ""}
+          </div>
+          <div class="subtle">${escapeHtml(truncateForDisplay(match.content, 220))}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function truncateForDisplay(value, max) {
+  const str = String(value || "");
+  return str.length > max ? `${str.slice(0, max - 1)}…` : str;
 }
 
 function renderRecordingLinks(urls) {

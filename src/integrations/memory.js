@@ -4,10 +4,19 @@ const SUPERMEMORY_URL = "https://api.supermemory.ai/v3";
 
 export async function searchMemory({ query, localMemory }) {
   if (!config.supermemory.apiKey) {
+    const results = localMemory
+      .filter((item) => item.content.toLowerCase().includes(query.toLowerCase().split(" ")[0]))
+      .slice(0, 5);
     return {
       mode: "simulated",
       provider: "Supermemory",
-      results: localMemory.filter((item) => item.content.toLowerCase().includes(query.toLowerCase().split(" ")[0])).slice(0, 5)
+      results,
+      topMatches: results.map((item) => ({
+        score: null,
+        title: null,
+        content: item.content,
+        documentId: null
+      }))
     };
   }
 
@@ -20,7 +29,7 @@ export async function searchMemory({ query, localMemory }) {
     body: JSON.stringify({
       q: query,
       userId: config.supermemory.userId,
-      projectId: config.supermemory.projectId
+      limit: 5
     })
   });
 
@@ -28,11 +37,41 @@ export async function searchMemory({ query, localMemory }) {
     throw new Error(`Supermemory search failed: ${response.status} ${await response.text()}`);
   }
 
+  const data = await response.json();
   return {
     mode: "real",
     provider: "Supermemory",
-    data: await response.json()
+    data,
+    topMatches: normalizeSupermemoryMatches(data),
+    timingMs: typeof data.timing === "number" ? Math.round(data.timing) : null
   };
+}
+
+// Flattens the Supermemory search response into the smallest shape the
+// dashboard / orchestrator need. Each result has at least one chunk; we
+// take the top-scoring chunk per document.
+//
+// Reference: https://docs.supermemory.ai/memory-api/searching/searching-memories
+function normalizeSupermemoryMatches(data) {
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return results
+    .map((result) => {
+      const chunk = Array.isArray(result.chunks)
+        ? result.chunks.reduce((best, current) => {
+            if (!best) return current;
+            if (typeof current?.score !== "number") return best;
+            if (typeof best.score !== "number" || current.score > best.score) return current;
+            return best;
+          }, null)
+        : null;
+      return {
+        score: typeof result.score === "number" ? Number(result.score.toFixed(3)) : null,
+        title: result.title || null,
+        content: chunk?.content || null,
+        documentId: result.documentId || null
+      };
+    })
+    .filter((match) => match.content);
 }
 
 export async function saveMemory({ content }) {

@@ -83,10 +83,22 @@ async function runTask(runId, task) {
       query: task.title,
       localMemory: getState().memory
     });
+    const matches = Array.isArray(memory.topMatches) ? memory.topMatches : [];
+    const detailParts = [];
+    if (memory.mode === "real") {
+      detailParts.push(matches.length ? `${matches.length} memories from Supermemory.` : "No prior memories matched.");
+      if (memory.timingMs !== null && memory.timingMs !== undefined) {
+        detailParts.push(`Search took ${memory.timingMs}ms.`);
+      }
+    } else {
+      detailParts.push(`${matches.length || memory.results?.length || 0} local memories.`);
+    }
     addArtifact(runId, task.id, {
       kind: "memory",
       title: "Supermemory lookup",
-      detail: memory.mode === "real" ? "Retrieved remote memories." : `Retrieved ${memory.results?.length || 0} local memories.`
+      detail: detailParts.join(" "),
+      mode: memory.mode,
+      matches: matches.slice(0, 3)
     });
 
     if (task.type === "appointment_booking") {
