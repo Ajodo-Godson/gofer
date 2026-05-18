@@ -1,98 +1,130 @@
 # GOFER
 
-GOFER is an autonomous errand-agent system. A user gives it a real-world task, and GOFER breaks it into specialist work handled by persistent agents: browser research, phone calls, email follow-up, memory retrieval, knowledge lookup, and payment preparation.
+**Autonomous errand agents that make phone calls, browse authenticated sites, send emails, and handle payments — in parallel — with your approval before anything irreversible happens.**
 
-The demo is built around practical errands:
+Built at the AI Tinkerers Hackathon, San Francisco, May 2026.
 
-- Book a dental appointment with a phone-only provider
-- Find restaurant reservation options and stop for user approval before booking
-- Prepare purchase or checkout flows without submitting payment
-- Dispute a bill through an authenticated portal
-- Send confirmations and preserve task memory
+---
 
-GOFER is not a single prompt pretending to multitask. It runs separate agent processes with independent identities, queues, memory scopes, and lifecycles.
+## What It Does
 
-## How It Works
+You type one sentence. GOFER dispatches a team of specialist agents that coordinate across every channel to get it done.
 
-1. A task enters GOFER from the dashboard or the demo source-of-truth task list.
-2. The planner maps the task to a reusable workflow template.
-3. The orchestrator dispatches jobs to persistent specialist agents.
-4. Each agent uses the right integration for its part of the workflow.
-5. The dashboard streams task state, artifacts, worker status, and approval gates.
-6. GOFER stops before irreversible actions such as payment, final booking, account creation, or order submission unless explicitly allowed.
+- **Book a dentist appointment** — GOFER calls the office (live phone call via AgentPhone), navigates the conversation naturally, and reports back. No online booking system? Doesn't matter.
+- **Order biryani from UberEats** — GOFER opens UberEats with your authenticated browser profile, finds the restaurant, surfaces options, and builds the cart. It stops before checkout and asks you to confirm.
+- **Dispute a PG&E charge** — GOFER logs into the billing portal, prepares the dispute draft, and stops for your approval before submitting anything.
+- **Order flowers** — GOFER finds options, prepares the order, and stops before payment.
 
-## Agent Workflow
+These aren't browser demos with pre-loaded state. Every run is live: real phone calls, real browser sessions, real authenticated portals.
 
-GOFER uses reusable workflow templates in `src/lib/workflowTemplates.js`.
+---
 
-Current workflow families:
+## Why GOFER Is Different
 
-- `reservation.find_and_book` - restaurant discovery, candidate ranking, booking approval
-- `phone.book_appointment` - phone-based provider scheduling
-- `browser.purchase_until_checkout` - product or food cart preparation before checkout
-- `browser.fill_form` - portal and application form completion
-- `billing.dispute_charge` - billing portal dispute preparation
-- `general.errand` - reversible research and coordination tasks
+Every other AI agent system today is a browser agent. They open a tab, click things, and stop when they hit a login wall, a CAPTCHA, or a phone number.
 
-Each workflow defines:
+GOFER is built around the real shape of errands:
 
-- Matching rules for incoming requests
-- Required tools and integrations
-- Approval gates
-- Agent routing
-- Browser Use prompts and structured output schemas where needed
+| What the errand needs | How GOFER handles it |
+|---|---|
+| Provider only takes phone calls | AgentPhone — live outbound call |
+| Site requires your login | Browser Use profile sync — authenticated session |
+| Confirmation sent by email | AgentMail — reads and replies |
+| Needs your payment method | Sponge + Stripe — pre-authorized, gated by approval |
+| You did this errand before | Supermemory — recalls preferences, providers, past decisions |
+| Agent needs domain knowledge | Moss — RAG over your saved context |
 
-## Persistent Agents
+And all of it runs in **parallel**. While GOFER is on the phone with the dentist, it is also browsing UberEats and preparing the dispute form. Separate agents, separate queues, separate lifecycles — shown live in the dashboard.
 
-The worker layer lives in `src/agents/`.
+---
 
-- `BrowserReconAgent` handles Browser Use research, portal actions, carts, forms, and website workflows.
-- `PhoneBookingAgent` handles AgentPhone calls and appointment workflows.
-- `EmailApplicationAgent` handles AgentMail messages and follow-up threads.
-- `MemoryLegalAgent` handles Supermemory recall, memory writes, and Moss knowledge context.
-- `PaymentAgent` handles payment preparation through Sponge and Stripe.
+## The Supermemory Angle
 
-Each agent has its own queue, status, process identity, memory scope, and completion history. The dashboard exposes these as live worker lanes so it is clear which agent is doing which job.
+Every task GOFER completes writes back to Supermemory. Not just "done" — the context. Which dentist, which time preference, which item you approved, which restaurant you've used before.
 
-## Integration System
+Next time you say "book the dentist," GOFER already knows the provider, the number, and that you prefer mornings. The system gets faster and more accurate with every errand. No competitor has a memory layer that persists across sessions and actively informs future autonomous decisions.
 
-GOFER treats integrations as workflow infrastructure, not decorative sponsor logos.
-
-- **Browser Use** powers live or headless website operation: search, discovery, form filling, cart building, and authenticated browser workflows. GOFER uses Browser Use Cloud API v3 sessions and structured outputs for reusable workflows.
-- **AgentPhone** powers real outbound calls and webhook-driven phone workflows for providers that cannot be reached online.
-- **AgentMail** sends and receives formal task follow-up, confirmations, and application-style messages.
-- **Supermemory** stores durable task history, user preferences, and cross-task context.
-- **Moss** provides fast retrieval for facts needed during live calls or decision points.
-- **Sponge** represents the agent wallet layer for prepared payments and fee authorization.
-- **Stripe** represents business-side payment collection and success-fee flows.
+---
 
 ## Safety Model
 
-GOFER is designed to move fast while stopping at the right boundaries.
+GOFER is designed to move fast and stop at the right boundaries.
 
-Approval gates are built into workflow templates for:
+Every workflow template defines explicit **approval gates** — points where GOFER pauses and requires your confirmation before proceeding. These gates cover:
 
-- Final booking confirmation
 - Payment or deposit submission
-- Order placement
+- Final order or booking confirmation
 - Sensitive form submission
-- Authentication or OAuth handoff
-- Any irreversible external commitment
+- OAuth / authentication handoff
+- Any action that cannot be undone
 
-Live actions are controlled by environment flags in `.env`. The checked-in `.env.example` documents the required keys and safety toggles.
+GOFER returns options, prepares actions, and surfaces context. You approve. It executes.
+
+---
+
+## Sponsor Stack
+
+Every integration is live — not mocked, not simulated.
+
+- **Browser Use** — authenticated cloud browser sessions with profile sync and structured output
+- **AgentPhone** — outbound voice calls with live webhook transcripts
+- **AgentMail** — email send, receive, and thread management for agents
+- **Supermemory** — persistent cross-session memory and preference recall
+- **Moss** — retrieval-augmented knowledge context during live tasks
+- **Sponge** — agent wallet layer for prepared payment flows
+- **Stripe** — payment collection and success-fee infrastructure
+
+---
+
+## Architecture
+
+```
+User input
+    │
+    ▼
+Planner → maps request to workflow template
+    │
+    ▼
+Orchestrator → dispatches jobs to specialist agents (parallel)
+    │
+    ├── BrowserReconAgent    (Browser Use — search, carts, portals)
+    ├── PhoneBookingAgent    (AgentPhone — live calls)
+    ├── EmailApplicationAgent (AgentMail — send/receive)
+    ├── MemoryLegalAgent     (Supermemory + Moss — recall + context)
+    └── PaymentAgent         (Sponge + Stripe — payment prep)
+    │
+    ▼
+Dashboard streams live state, artifacts, approval gates
+    │
+    ▼
+User approves → GOFER executes the irreversible step
+```
+
+Workflow templates live in `src/lib/workflowTemplates.js`. Each template defines matching rules, required integrations, approval gates, agent routing, and Browser Use prompts with structured output schemas.
+
+---
 
 ## Running Locally
 
 ```bash
 npm install
 cp .env.example .env
+# Fill in API keys for Browser Use, AgentPhone, AgentMail, Supermemory, Moss, Sponge, Stripe
 npm run start
 ```
 
-Then open:
+Open `http://localhost:8787`.
 
-```text
-http://localhost:8787
+To sync your browser profile for authenticated sites (UberEats, DoorDash, etc.):
+
+```bash
+export BROWSER_USE_API_KEY=your_key && curl -fsSL https://browser-use.com/profile.sh | sh
 ```
 
-The app serves a Node backend from `src/server.js` and a static dashboard from `public/`.
+Copy the returned profile ID into `BROWSER_USE_PROFILE_ID` in `.env` and restart.
+
+---
+
+## Team
+
+Built by Godson Ajodo at the AI Tinkerers Hackathon, San Francisco, May 2026.
