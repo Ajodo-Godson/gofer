@@ -28,21 +28,21 @@ const els = {
   events: document.querySelector("#events")
 };
 
-els.runDemo.addEventListener("click", async () => {
+els.runDemo?.addEventListener("click", async () => {
   els.runDemo.disabled = true;
   els.runDemo.textContent = "Dispatching...";
   await fetch("/api/run-demo", { method: "POST" });
   await refresh();
 });
 
-els.testBrowserPortal.addEventListener("click", async () => {
+els.testBrowserPortal?.addEventListener("click", async () => {
   els.testBrowserPortal.disabled = true;
   els.testBrowserPortal.textContent = "Opening portal...";
   await fetch("/api/test-browser-portal", { method: "POST" });
   await refresh();
 });
 
-  els.testBrowserUse.addEventListener("click", async () => {
+els.testBrowserUse?.addEventListener("click", async () => {
   els.testBrowserUse.disabled = true;
   els.testBrowserUse.textContent = "Finding options...";
   await fetch("/api/test-browser-use", { method: "POST" });
@@ -83,7 +83,7 @@ els.chatForm.addEventListener("submit", async (event) => {
   await refresh();
 });
 
-els.sourceForm.addEventListener("submit", async (event) => {
+els.sourceForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const url = els.sourceUrlInput.value.trim();
   const text = els.sourceTextInput.value.trim();
@@ -125,13 +125,10 @@ async function refresh() {
 
 function render() {
   renderTasks();
-  renderIntegrations();
-  renderChecklist();
   renderChat();
   renderRun();
   renderAgentProcesses();
   renderMemory();
-  renderEvents();
 }
 
 function renderTasks() {
@@ -201,15 +198,21 @@ function renderRun() {
 
   els.runStatus.textContent = run.status;
   els.runStatus.className = `badge ${escapeHtml(run.status)}`;
-  els.runDemo.disabled = run.status === "running";
-  els.runDemo.textContent = run.status === "running" ? "Agents running..." : "Run GOFER demo";
+  if (els.runDemo) {
+    els.runDemo.disabled = run.status === "running";
+    els.runDemo.textContent = run.status === "running" ? "Agents running..." : "Run GOFER demo";
+  }
   els.manualTaskSubmit.disabled = run.status === "running";
   els.manualTaskSubmit.textContent = run.status === "running" ? "Running..." : "Dispatch";
   const browserRunning = run.tasks.some((task) => task.type === "browser_test" && task.status === "running");
-  els.testBrowserPortal.disabled = browserRunning;
-  els.testBrowserPortal.textContent = browserRunning ? "Browser running..." : "Run Patient Portal";
-  els.testBrowserUse.disabled = browserRunning;
-  els.testBrowserUse.textContent = browserRunning ? "Browser running..." : "Find DoorDash Options";
+  if (els.testBrowserPortal) {
+    els.testBrowserPortal.disabled = browserRunning;
+    els.testBrowserPortal.textContent = browserRunning ? "Browser running..." : "Run Patient Portal";
+  }
+  if (els.testBrowserUse) {
+    els.testBrowserUse.disabled = browserRunning;
+    els.testBrowserUse.textContent = browserRunning ? "Browser running..." : "Find DoorDash Options";
+  }
 
   els.agentLanes.className = "lanes";
   if (isActive) {

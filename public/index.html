@@ -15,23 +15,8 @@
         </div>
         <div class="actions">
           <button id="runDemo" class="primary">Run GOFER demo</button>
-          <button id="testBrowserPortal" class="secondary">Run Patient Portal</button>
-          <button id="testBrowserUse" class="secondary">Find DoorDash Options</button>
         </div>
       </header>
-
-      <section class="panel profile-help">
-        <div>
-          <p class="eyebrow">Authenticated Sites</p>
-          <h2>One-Time Browser Profile Setup</h2>
-        </div>
-        <ol>
-          <li>Log in to DoorDash in your normal browser.</li>
-          <li>Run Browser Use profile sync once: <code>export BROWSER_USE_API_KEY=your_key && curl -fsSL https://browser-use.com/profile.sh | sh</code></li>
-          <li>Copy the returned profile ID into <code>BROWSER_USE_PROFILE_ID</code> in <code>.env</code>, then restart GOFER.</li>
-        </ol>
-        <p class="subtle">GOFER can search public options first. It only asks for profile permission when it needs account state to add to cart or continue through OAuth.</p>
-      </section>
 
       <section class="panel manual-panel">
         <div class="section-head">
@@ -44,82 +29,43 @@
           <input
             id="manualTaskInput"
             type="text"
-            value="Find and book Chinese restaurant near 560 20th St in San Francisco for 3 people tonight around 5:30pm, not too expensive, good for a team dinner."
+            value=""
+            placeholder="Tell GOFER what to do…"
             aria-label="Manual GOFER task"
           />
           <button id="manualTaskSubmit" class="primary" type="submit">Dispatch</button>
         </form>
       </section>
 
-      <section class="grid command-grid">
-        <section class="panel chat-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Follow-Up</p>
-              <h2>Chat With GOFER</h2>
-            </div>
-            <button class="cancel-btn" onclick="clearChat()" title="Clear chat history">Clear</button>
+      <section class="panel chat-panel" style="margin-bottom:16px">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Follow-Up</p>
+            <h2>Chat With GOFER</h2>
           </div>
-          <div id="chatMessages" class="chat-messages"></div>
-          <form id="chatForm" class="chat-form">
-            <input
-              id="chatInput"
-              type="text"
-              placeholder="Approve, choose an option, or ask GOFER to continue..."
-              aria-label="Chat with GOFER"
-            />
-            <button id="chatSubmit" class="secondary" type="submit">Send</button>
-          </form>
-        </section>
-
-        <section class="panel source-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Source Connector</p>
-              <h2>Import To-Dos</h2>
-            </div>
-          </div>
-          <form id="sourceForm" class="source-form">
-            <input
-              id="sourceUrlInput"
-              type="url"
-              placeholder="Public Notion, Google Doc, or task doc URL"
-              aria-label="Task source URL"
-            />
-            <textarea
-              id="sourceTextInput"
-              rows="5"
-              placeholder="- Book dentist this week&#10;- Dispute PG&E overcharge&#10;- Order flowers for June 5"
-              aria-label="Paste task list"
-            ></textarea>
-            <button id="sourceSubmit" class="secondary" type="submit">Import Tasks</button>
-          </form>
-          <div id="sourceStatus" class="source-status subtle"></div>
-        </section>
+          <button class="cancel-btn" onclick="clearChat()" title="Clear chat history">Clear</button>
+        </div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <form id="chatForm" class="chat-form">
+          <input
+            id="chatInput"
+            type="text"
+            placeholder="Approve, choose an option, or ask GOFER to continue..."
+            aria-label="Chat with GOFER"
+          />
+          <button id="chatSubmit" class="secondary" type="submit">Send</button>
+        </form>
       </section>
 
-      <section class="grid">
-        <section class="panel hero-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Source Of Truth</p>
-              <h2>Notion Tasks</h2>
-            </div>
-            <span id="runStatus" class="badge">Idle</span>
+      <section class="panel" style="margin-bottom:16px">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Source Of Truth</p>
+            <h2>Notion Tasks</h2>
           </div>
-          <div id="notionTasks" class="task-list"></div>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Sponsor Stack</p>
-              <h2>Integrations</h2>
-            </div>
-          </div>
-          <div id="integrations" class="integration-grid"></div>
-          <div id="checklist" class="checklist"></div>
-        </section>
+          <span id="runStatus" class="badge">Idle</span>
+        </div>
+        <div id="notionTasks" class="task-list"></div>
       </section>
 
       <section class="panel">
@@ -144,26 +90,14 @@
         <div id="agentProcesses" class="agent-processes"></div>
       </section>
 
-      <section class="grid bottom-grid">
-        <section class="panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Durable Context</p>
-              <h2>Memory</h2>
-            </div>
+      <section class="panel" style="margin-top:16px">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Durable Context</p>
+            <h2>Memory</h2>
           </div>
-          <div id="memory" class="memory-list"></div>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Live Feed</p>
-              <h2>Events</h2>
-            </div>
-          </div>
-          <div id="events" class="event-feed"></div>
-        </section>
+        </div>
+        <div id="memory" class="memory-list"></div>
       </section>
     </main>
     <script src="/app.js"></script>

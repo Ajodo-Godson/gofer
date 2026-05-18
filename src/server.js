@@ -590,9 +590,11 @@ async function handleUserChat(message) {
     return handleIrreversibleApproval({ message, activeRun, task });
   }
 
+  const selectedObj = selectCandidateObjectFromMessage(task, message);
   if (isAffirmative(message) || selected) {
     const restaurant = selected || approval.recommendation || "the recommended option";
-    const followup = buildFollowupTask(task, restaurant);
+    const restaurantUrl = selectedObj?.url || null;
+    const followup = buildFollowupTask(task, restaurant, restaurantUrl);
     const reply = buildApprovalAcceptedReply(task, restaurant);
     addChatMessage("assistant", reply, {
       runId: activeRun.id,
@@ -807,6 +809,10 @@ function parseRecommendation(detail) {
 }
 
 function selectCandidateFromMessage(task, message) {
+  return selectCandidateObjectFromMessage(task, message)?.name || null;
+}
+
+function selectCandidateObjectFromMessage(task, message) {
   const text = message.toLowerCase();
   for (const artifact of task.artifacts || []) {
     const parsed = parseJsonMaybe(artifact.output);
@@ -815,7 +821,12 @@ function selectCandidateFromMessage(task, message) {
       const label = candidate?.name || candidate?.restaurant_name || candidate?.selected_item || candidate?.label;
       return label && text.includes(label.toLowerCase());
     });
-    if (match) return match.name || match.restaurant_name || match.selected_item || match.label;
+    if (match) {
+      return {
+        name: match.name || match.restaurant_name || match.selected_item || match.label,
+        url: match.url_or_path || match.url || match.link || null
+      };
+    }
   }
   return null;
 }
@@ -833,7 +844,7 @@ function buildApprovalAcceptedReply(task, selected) {
   return `Proceeding with ${selected}. I am starting the approved next step now and will stop before any irreversible action.`;
 }
 
-function buildFollowupTask(task, selected) {
+function buildFollowupTask(task, selected, directUrl = null) {
   if (task.type === "restaurant_reservation") {
     if (/phone fallback|call the restaurant|online availability not verified/i.test(`${task.result || ""} ${task.stage || ""}`)) {
       return `Call ${selected} to check availability for this approved reservation request: ${task.title}. Only ask for the date, time, and party size the user explicitly requested. If any of those details are missing, ask the restaurant what information is needed and report back instead of inventing details. Do not finalize the booking, accept a deposit, or make payment without user confirmation.`;
@@ -841,13 +852,14 @@ function buildFollowupTask(task, selected) {
     return `Verify live availability and prepare booking for ${selected} for this request: ${task.title}. Do not finalize the booking or submit payment without approval.`;
   }
   if (task.type === "product_discovery") {
+    const urlHint = directUrl ? ` Navigate directly to: ${directUrl}` : "";
     if (/ubereats|uber\s+eats/i.test(task.title)) {
-      return `Build a UberEats cart for ${selected} on ubereats for this approved request: ${task.title}. Stop before checkout, payment, or order submission.`;
+      return `Build a UberEats cart for ${selected} on ubereats for this approved request: ${task.title}.${urlHint} Stop before checkout, payment, or order submission.`;
     }
     if (/doordash/i.test(task.title)) {
-      return `Build a DoorDash cart for ${selected} on doordash for this approved request: ${task.title}. Stop before checkout, payment, or order submission.`;
+      return `Build a DoorDash cart for ${selected} on doordash for this approved request: ${task.title}.${urlHint} Stop before checkout, payment, or order submission.`;
     }
-    return `Build a cart for ${selected} for this approved shopping request: ${task.title}. Stop before checkout, payment, delivery confirmation, or final order submission.`;
+    return `Build a cart for ${selected} for this approved shopping request: ${task.title}.${urlHint} Stop before checkout, payment, delivery confirmation, or final order submission.`;
   }
   return `Continue this approved GOFER task for ${selected}: ${task.title}. Stop before any irreversible action.`;
 }
