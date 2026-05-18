@@ -4,6 +4,7 @@ import { runBrowserTask, runDoorDashCartDemo, runDoorDashDiscoveryDemo, runPatie
 import { sendEmail } from "../integrations/agentmail.js";
 import { retrieveMossContext, saveMemory, searchMemory } from "../integrations/memory.js";
 import { chargeAgentWallet } from "../integrations/payments.js";
+import { injectWorkflow } from "../lib/workflowInjector.js";
 
 const identity = {
   id: process.env.GOFER_AGENT_ID,
@@ -64,6 +65,9 @@ async function handleJob(job) {
   if (identity.role === "browser") {
     return handleBrowserJob(job);
   }
+  if (identity.role === "workflow") {
+    return handleWorkflowJob(job);
+  }
   if (identity.role === "phone") {
     return handlePhoneJob(job);
   }
@@ -77,6 +81,13 @@ async function handleJob(job) {
     return handlePaymentJob(job);
   }
   throw new Error(`Unsupported agent role: ${identity.role}`);
+}
+
+async function handleWorkflowJob(job) {
+  if (job.type === "inject-workflow") {
+    return injectWorkflow(job.payload);
+  }
+  throw new Error(`Unsupported workflow job: ${job.type}`);
 }
 
 async function handleBrowserJob(job) {
@@ -99,6 +110,9 @@ async function handleBrowserJob(job) {
 
 async function handlePhoneJob(job) {
   if (job.type === "appointment-call") {
+    return placeCall(job.payload);
+  }
+  if (job.type === "phone-call") {
     return placeCall(job.payload);
   }
   if (job.type === "landlord-fanout") {

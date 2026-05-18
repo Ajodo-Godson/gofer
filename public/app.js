@@ -232,6 +232,7 @@ function renderLane(task) {
 
 function renderArtifact(artifact) {
   const liveUrl = normalizeLiveUrl(artifact.liveUrl || artifact.live_url);
+  const screenshotUrl = normalizeLiveUrl(artifact.screenshotUrl || artifact.screenshot_url);
   const title = artifact.kind === "browser" ? "Web research result" : artifact.title || artifact.kind;
   return `
     <div class="artifact">
@@ -242,6 +243,7 @@ function renderArtifact(artifact) {
         ${artifact.output ? renderArtifactOutput(artifact.output) : ""}
         ${artifact.warning ? `<div class="warning">${escapeHtml(artifact.warning)}</div>` : ""}
         ${liveUrl ? renderLiveLink(liveUrl) : ""}
+        ${screenshotUrl ? renderScreenshotLink(screenshotUrl) : ""}
       </div>
     </div>
   `;
@@ -275,16 +277,32 @@ function renderArtifactOutput(output) {
         ${parsed.options.map((option) => `
           <div class="candidate">
             <div class="candidate-head">
-              <strong>${escapeHtml(option.restaurant_name || "Option")}</strong>
-              <span>${escapeHtml(option.estimated_price || "")}</span>
+              <strong>${escapeHtml(option.restaurant_name || option.name || "Option")}</strong>
+              <span>${escapeHtml(option.estimated_price || option.price || "")}</span>
             </div>
             <p>${escapeHtml(option.why_it_fits || "")}</p>
             <div class="subtle">${escapeHtml((option.food_choices || []).join(", "))}</div>
-            <div class="availability">${escapeHtml(option.next_action || "Approve profile use to build the cart.")}</div>
+            <div class="availability">${escapeHtml(option.next_action || option.availability || "")}</div>
           </div>
         `).join("")}
       </div>
-      ${parsed.user_instruction ? `<div class="next-action">${escapeHtml(parsed.user_instruction)}</div>` : ""}
+      ${parsed.user_instruction || parsed.next_action ? `<div class="next-action">${escapeHtml(parsed.user_instruction || parsed.next_action)}</div>` : ""}
+    `;
+  }
+  if (parsed?.selected_items?.length || parsed?.checkout_state || parsed?.subtotal) {
+    return `
+      <div class="candidate-list">
+        <div class="candidate">
+          <div class="candidate-head">
+            <strong>${escapeHtml(parsed.merchant || "Prepared cart")}</strong>
+            <span>${escapeHtml(parsed.subtotal || "")}</span>
+          </div>
+          <p>${escapeHtml((parsed.selected_items || []).join(", ") || parsed.status || "")}</p>
+          <div class="availability">${escapeHtml(parsed.checkout_state || "checkout_review")}</div>
+          ${parsed.blockers ? `<div class="warning">${escapeHtml(Array.isArray(parsed.blockers) ? parsed.blockers.join(", ") : parsed.blockers)}</div>` : ""}
+        </div>
+      </div>
+      ${parsed.next_action ? `<div class="next-action">${escapeHtml(parsed.next_action)}</div>` : ""}
     `;
   }
   return `<details class="artifact-details"><summary>View structured output</summary><pre class="artifact-output">${escapeHtml(output)}</pre></details>`;
@@ -305,9 +323,21 @@ function renderActionRequired(action) {
 
 function renderLiveLink(liveUrl) {
   return `
+    <div class="browser-live">
+      <div class="browser-live-head">
+        <span>Live browser</span>
+        <a href="${escapeHtml(liveUrl)}" target="_blank" rel="noreferrer">Open in new tab ↗</a>
+      </div>
+      <iframe src="${escapeHtml(liveUrl)}" title="Live browser session" allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+  `;
+}
+
+function renderScreenshotLink(screenshotUrl) {
+  return `
     <details class="artifact-details">
-      <summary>Debug session link</summary>
-      <a href="${escapeHtml(liveUrl)}" target="_blank" rel="noreferrer">Open browser session</a>
+      <summary>Browser screenshot</summary>
+      <a href="${escapeHtml(screenshotUrl)}" target="_blank" rel="noreferrer">Open final screenshot</a>
     </details>
   `;
 }

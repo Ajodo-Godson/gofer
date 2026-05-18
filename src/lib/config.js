@@ -11,7 +11,7 @@ export const config = {
   browserUse: {
     apiKey: process.env.BROWSER_USE_API_KEY || "",
     baseUrl: normalizeBaseUrl(process.env.BROWSER_USE_API_BASE_URL || "https://api.browser-use.com/api/v1"),
-    profileId: process.env.BROWSER_USE_PROFILE_ID || "",
+    profileId: process.env.BROWSER_USE_PROFILE_ID || process.env.BROWSER_USER_PROFILE_ID || "",
     workspaceId: process.env.BROWSER_USE_WORKSPACE_ID || ""
   },
   agentMail: {

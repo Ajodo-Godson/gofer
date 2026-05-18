@@ -11,6 +11,12 @@ const AGENTS = [
     memoryScope: "browser.sessions"
   },
   {
+    id: "workflow-injector",
+    name: "WorkflowInjectorAgent",
+    role: "workflow",
+    memoryScope: "workflows.dynamic"
+  },
+  {
     id: "phone-booking",
     name: "PhoneBookingAgent",
     role: "phone",

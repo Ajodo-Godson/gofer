@@ -9,8 +9,8 @@ import { isBrowserUseDemoRunning, startBrowserUseDemo } from "./lib/browserUseDe
 import { startDemoRun, startManualRun } from "./lib/orchestrator.js";
 import { importTasksFromSource } from "./lib/taskSource.js";
 import { saveMemory } from "./integrations/memory.js";
-import { addChatMessage, bus, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks, updateRun, updateTask } from "./lib/store.js";
-import { appointmentVoiceReply, summarizeCallState } from "./lib/voiceController.js";
+import { addArtifact, addChatMessage, addMemory, bus, emit, getState, loadSeedData, rememberBrowserProfileApproval, replaceSourceTasks, updateRun, updateTask } from "./lib/store.js";
+import { summarizeCallState, voiceReply } from "./lib/voiceController.js";
 
 const root = process.cwd();
 const publicDir = join(root, "public");
@@ -167,6 +167,11 @@ async function handleAgentPhoneWebhook(req, res) {
   }
 
   const body = rawBody.length ? JSON.parse(rawBody.toString("utf8")) : {};
+  let voiceResponse = null;
+  if (body.channel === "voice" || body.event?.includes("voice") || body.event?.includes("call")) {
+    voiceResponse = voiceReply(body);
+  }
+  const call = summarizeCallState(body);
   emit("agentphone.webhook", {
     event: body.event,
     channel: body.channel,
@@ -174,11 +179,12 @@ async function handleAgentPhoneWebhook(req, res) {
     direction: body.data?.direction,
     from: body.data?.from,
     message: body.data?.message || null,
-    call: summarizeCallState(body)
+    call
   });
+  reconcileCallState(call);
 
-  if (body.channel === "voice" || body.event?.includes("voice") || body.event?.includes("call")) {
-    return json(res, appointmentVoiceReply(body));
+  if (voiceResponse) {
+    return json(res, voiceResponse);
   }
 
   if (body.channel === "sms" && body.data?.direction === "inbound") {
@@ -191,6 +197,64 @@ async function handleAgentPhoneWebhook(req, res) {
     ok: true,
     message: "GOFER received the AgentPhone webhook."
   });
+}
+
+function reconcileCallState(call) {
+  if (!call?.taskId) return;
+  const state = getState();
+  const run = state.runs.find((item) => item.tasks?.some((task) => task.id === call.taskId));
+  const task = run?.tasks?.find((item) => item.id === call.taskId);
+  if (!run || !task || task.status === "completed") return;
+
+  addArtifact(run.id, task.id, {
+    kind: "call",
+    title: "AgentPhone call update",
+    detail: call.completed
+      ? summarizeCompletedCall(call)
+      : `Call in progress: ${call.phase || "active"}.`,
+    output: call
+  });
+
+  if (!call.completed) {
+    updateTask(run.id, task.id, {
+      status: "running",
+      stage: "Phone call in progress"
+    });
+    return;
+  }
+
+  const result = summarizeCompletedCall(call);
+  updateTask(run.id, task.id, {
+    status: "completed",
+    stage: "Completed",
+    result
+  });
+  updateRun(run.id, {
+    status: "completed",
+    completedAt: new Date().toISOString(),
+    summary: `1 tasks done.\nDone: ${result}`
+  });
+  addMemory(`${task.title}: ${result}`, "completed_task", {
+    source: "agentphone_webhook",
+    runId: run.id,
+    taskId: task.id
+  });
+  addChatMessage("assistant", result, {
+    runId: run.id,
+    taskId: task.id,
+    action: "phone_call_completed"
+  });
+}
+
+function summarizeCompletedCall(call) {
+  if (call.kind === "appointment") {
+    return call.offeredTime
+      ? `Phone call completed: appointment time confirmed around ${call.offeredTime}.`
+      : "Phone call completed: appointment outcome confirmed.";
+  }
+  return call.capturedAnswer
+    ? `Phone call completed: ${call.capturedAnswer}`
+    : "Phone call completed.";
 }
 
 function verifyAgentPhoneSignature(rawBody, signature) {
@@ -243,6 +307,11 @@ async function handleUserChat(message) {
     return reply;
   }
 
+  const selected = selectCandidateFromMessage(task, message);
+  if (task?.type === "browser_test" && /doordash/i.test(task.title) && selected) {
+    return handleDoorDashOptionSelection({ selected, activeRun, task });
+  }
+
   if (authHandoff) {
     return handleAuthChat({ message, activeRun, task, authHandoff });
   }
@@ -251,7 +320,79 @@ async function handleUserChat(message) {
     return handleDoorDashCartApproval({ message, activeRun, task });
   }
 
-  const selected = selectCandidateFromMessage(task, message);
+  if (task?.type === "browser_test" && /doordash/i.test(task.title) && /retry|again|rerun|try again/i.test(message)) {
+    const reply = "Retrying DoorDash public discovery with search snippets only. I will not sign in, add to cart, checkout, or pay.";
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "doordash_discovery_retry_started"
+    });
+    updateTask(activeRun.id, task.id, {
+      status: "cancelled",
+      stage: "Retry superseded this run",
+      result: "Retry started for DoorDash public discovery."
+    });
+    updateRun(activeRun.id, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      summary: "Retry started for DoorDash public discovery."
+    });
+    startBrowserUseDemo("doordash").catch((error) => {
+      emit("run.error", { error: error.message });
+    });
+    return reply;
+  }
+
+  if (task?.type !== "browser_test" && isRetry(message)) {
+    const reply = "Retrying the browser step now. GOFER will keep the same safety gates and stop before checkout, payment, booking, submission, or any final commitment.";
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "browser_workflow_retry_started"
+    });
+    updateTask(activeRun.id, task.id, {
+      status: "cancelled",
+      stage: "Retry superseded this run",
+      result: "Retry started for the browser workflow."
+    });
+    updateRun(activeRun.id, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      summary: "Retry started for the browser workflow."
+    });
+    startManualRun(task.title).catch((error) => {
+      emit("run.error", { error: error.message });
+    });
+    return reply;
+  }
+
+  if (task?.type === "product_discovery" && /retry|again|rerun|try again|continue/i.test(message)) {
+    const reply = "Retrying product discovery with the search-first browser workflow. I will return options only and stop before cart, checkout, payment, or order submission.";
+    addChatMessage("assistant", reply, {
+      runId: activeRun.id,
+      taskId: task.id,
+      action: "product_discovery_retry_started"
+    });
+    updateTask(activeRun.id, task.id, {
+      status: "cancelled",
+      stage: "Retry superseded this run",
+      result: "Retry started with search-first product discovery."
+    });
+    updateRun(activeRun.id, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      summary: "Retry started with search-first product discovery."
+    });
+    startManualRun(task.title).catch((error) => {
+      emit("run.error", { error: error.message });
+    });
+    return reply;
+  }
+
+  if (["purchase", "billing_dispute"].includes(task?.type) && isAffirmative(message)) {
+    return handleIrreversibleApproval({ message, activeRun, task });
+  }
+
   if (isAffirmative(message) || selected) {
     const restaurant = selected || approval.recommendation || "the recommended option";
     const followup = buildFollowupTask(task, restaurant);
@@ -274,11 +415,62 @@ async function handleUserChat(message) {
   return reply;
 }
 
+function handleDoorDashOptionSelection({ selected, activeRun, task }) {
+  const hasProfile = Boolean(config.browserUse.profileId);
+  updateTask(activeRun.id, task.id, {
+    status: "pending",
+    stage: hasProfile ? "Waiting for Browser Use profile approval" : "Waiting for Browser Use profile setup",
+    result: `Selected DoorDash option: ${selected}. Profile approval required before cart building.`,
+    constraints: {
+      ...(task.constraints || {}),
+      selectedDoorDashRestaurant: selected
+    }
+  });
+  const reply = hasProfile
+    ? `${selected} selected. Reply \`approve profile\` to let GOFER use your synced Browser Use profile to build the cart. I will stop before payment or order submission.`
+    : `${selected} selected. To build the DoorDash cart, GOFER needs your synced Browser Use profile. Sync once, set \`BROWSER_USE_PROFILE_ID\`, restart GOFER, then reply \`approve profile\`. I will stop before payment or order submission.`;
+  addChatMessage("assistant", reply, {
+    runId: activeRun.id,
+    taskId: task.id,
+    action: hasProfile ? "doordash_option_selected_profile_requested" : "doordash_option_selected_profile_required",
+    selected
+  });
+  emit("approval.option_selected", {
+    runId: activeRun.id,
+    taskId: task.id,
+    selected,
+    next: hasProfile ? "approve_profile" : "sync_browser_profile"
+  });
+  return reply;
+}
+
+function handleIrreversibleApproval({ message, activeRun, task }) {
+  const isPurchase = task.type === "purchase";
+  const reply = isPurchase
+    ? "I captured your approval intent, but GOFER will not execute payment, checkout, delivery confirmation, or final order submission from this chat path. The prepared cart/details remain in the task artifact for review."
+    : "I captured your approval intent, but GOFER will not submit the dispute or send the final message from this chat path. The prepared draft remains in the task artifact for review.";
+  addChatMessage("assistant", reply, {
+    runId: activeRun.id,
+    taskId: task.id,
+    action: isPurchase ? "payment_execution_blocked" : "submission_execution_blocked",
+    userMessage: message
+  });
+  emit("approval.blocked", {
+    runId: activeRun.id,
+    taskId: task.id,
+    reason: isPurchase ? "payment_execution_requires_explicit_adapter" : "submission_execution_requires_explicit_adapter"
+  });
+  return reply;
+}
+
 async function handleDoorDashCartApproval({ message, activeRun, task }) {
   const hasProfile = Boolean(config.browserUse.profileId);
   const profileApproved = /profile|cart|checkout|add|order|approve|proceed|continue|yes/i.test(message);
+  const selected = task.constraints?.selectedDoorDashRestaurant || latestApprovalArtifact(task)?.recommendation || null;
   if (!hasProfile) {
-    const reply = "I found food options first. To build the DoorDash cart, GOFER needs your synced Browser Use profile. Sync once, set `BROWSER_USE_PROFILE_ID`, restart GOFER, then reply `approve profile`.";
+    const reply = selected
+      ? `${selected} is selected. To build the DoorDash cart, GOFER needs your synced Browser Use profile. Sync once, set \`BROWSER_USE_PROFILE_ID\`, restart GOFER, then reply \`approve profile\`.`
+      : "I found food options first. To build the DoorDash cart, GOFER needs your synced Browser Use profile. Sync once, set `BROWSER_USE_PROFILE_ID`, restart GOFER, then reply `approve profile`.";
     addChatMessage("assistant", reply, {
       runId: activeRun.id,
       taskId: task.id,
@@ -305,7 +497,9 @@ async function handleDoorDashCartApproval({ message, activeRun, task }) {
     emit("memory.save_failed", { error: error.message, source: "browser_profile_permission" });
   });
   const followup = buildAuthenticatedFollowupTask(task, { blocker: "cart building requires authenticated DoorDash profile" });
-  const reply = "Approved. I will use your synced Browser Use profile to build the DoorDash cart and stop before payment or order submission.";
+  const reply = selected
+    ? `Approved. I will use your synced Browser Use profile to build a DoorDash cart for ${selected} and stop before payment or order submission.`
+    : "Approved. I will use your synced Browser Use profile to build the DoorDash cart and stop before payment or order submission.";
   addChatMessage("assistant", reply, {
     runId: activeRun.id,
     taskId: task.id,
@@ -420,8 +614,11 @@ function selectCandidateFromMessage(task, message) {
   for (const artifact of task.artifacts || []) {
     const parsed = parseJsonMaybe(artifact.output);
     const candidates = [...(parsed?.candidates || []), ...(parsed?.options || [])];
-    const match = candidates.find((candidate) => candidate?.name && text.includes(candidate.name.toLowerCase()));
-    if (match) return match.name;
+    const match = candidates.find((candidate) => {
+      const label = candidate?.name || candidate?.restaurant_name || candidate?.selected_item || candidate?.label;
+      return label && text.includes(label.toLowerCase());
+    });
+    if (match) return match.name || match.restaurant_name || match.selected_item || match.label;
   }
   return null;
 }
@@ -442,7 +639,7 @@ function buildApprovalAcceptedReply(task, selected) {
 function buildFollowupTask(task, selected) {
   if (task.type === "restaurant_reservation") {
     if (/phone fallback|call the restaurant|online availability not verified/i.test(`${task.result || ""} ${task.stage || ""}`)) {
-      return `Call ${selected} to check availability for this approved reservation request: ${task.title}. Ask for 5:30 PM for 3 people tonight. Do not finalize the booking, accept a deposit, or make payment without user confirmation.`;
+      return `Call ${selected} to check availability for this approved reservation request: ${task.title}. Only ask for the date, time, and party size the user explicitly requested. If any of those details are missing, ask the restaurant what information is needed and report back instead of inventing details. Do not finalize the booking, accept a deposit, or make payment without user confirmation.`;
     }
     return `Verify live availability and prepare booking for ${selected} for this request: ${task.title}. Do not finalize the booking or submit payment without approval.`;
   }
@@ -454,7 +651,10 @@ function buildFollowupTask(task, selected) {
 
 function buildAuthenticatedFollowupTask(task, authHandoff) {
   if (task.type === "browser_test" && /doordash/i.test(task.title)) {
-    return "Build a DoorDash cart using the approved synced Browser Use profile. Stop at cart or checkout review before payment or order submission.";
+    const selected = task.constraints?.selectedDoorDashRestaurant;
+    return selected
+      ? `Build a DoorDash cart for ${selected} using the approved synced Browser Use profile. Stop at cart or checkout review before payment or order submission.`
+      : "Build a DoorDash cart using the approved synced Browser Use profile. Stop at cart or checkout review before payment or order submission.";
   }
   if (task.type === "purchase") {
     return `Continue authenticated checkout preparation for this task using the approved synced Browser Use profile: ${task.title}. Stop before payment or final order submission.`;
@@ -474,6 +674,10 @@ function isAffirmative(message) {
 
 function isNegative(message) {
   return /\b(no|stop|cancel|do not|don't|hold off|decline)\b/i.test(message);
+}
+
+function isRetry(message) {
+  return /\b(retry|again|rerun|try again|run it again|restart)\b/i.test(message);
 }
 
 function isNewErrandRequest(message) {

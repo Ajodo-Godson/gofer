@@ -1,8 +1,10 @@
 import { EventEmitter } from "node:events";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
 export const bus = new EventEmitter();
 bus.setMaxListeners(100);
+
+const runtimeStatePath = "data/gofer-state.local.json";
 
 const state = {
   runs: [],
@@ -14,6 +16,9 @@ const state = {
   chat: [],
   events: []
 };
+
+let persistTimer = null;
+let stateLoaded = false;
 
 export async function loadSeedData() {
   state.user = JSON.parse(await readFile("data/demo-user.json", "utf8"));
@@ -29,6 +34,8 @@ export async function loadSeedData() {
       content: `${state.user.savedProviders.dentist.name} is the saved dentist. Phone ${state.user.savedProviders.dentist.phone}.`
     }
   ];
+  await restoreRuntimeState();
+  stateLoaded = true;
 }
 
 export function resetDemoTasks() {
@@ -143,10 +150,57 @@ export function emit(type, payload) {
   state.events.unshift(event);
   state.events = state.events.slice(0, 200);
   bus.emit("event", event);
+  schedulePersist();
 }
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+async function restoreRuntimeState() {
+  try {
+    const raw = await readFile(runtimeStatePath, "utf8");
+    const saved = JSON.parse(raw);
+    if (Array.isArray(saved.seedTasks) && saved.seedTasks.length) {
+      state.seedTasks = saved.seedTasks;
+    }
+    if (Array.isArray(saved.tasks)) state.tasks = saved.tasks;
+    if (Array.isArray(saved.runs)) state.runs = saved.runs;
+    if (Array.isArray(saved.chat)) state.chat = saved.chat;
+    if (Array.isArray(saved.events)) state.events = saved.events;
+    if (Array.isArray(saved.memory)) state.memory = saved.memory;
+    state.activeRunId = saved.activeRunId || state.runs[0]?.id || null;
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.warn(`GOFER could not restore runtime state: ${error.message}`);
+    }
+  }
+}
+
+function schedulePersist() {
+  if (!stateLoaded) return;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistRuntimeState().catch((error) => {
+      console.warn(`GOFER could not persist runtime state: ${error.message}`);
+    });
+  }, 100);
+  persistTimer.unref?.();
+}
+
+async function persistRuntimeState() {
+  const snapshot = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    activeRunId: state.activeRunId,
+    seedTasks: state.seedTasks,
+    tasks: state.tasks,
+    runs: state.runs.slice(0, 10),
+    chat: state.chat.slice(-80),
+    events: state.events.slice(0, 200),
+    memory: state.memory.slice(-100)
+  };
+  await writeFile(runtimeStatePath, `${JSON.stringify(snapshot, null, 2)}\n`);
 }
 
 function compactPayload(type, payload) {

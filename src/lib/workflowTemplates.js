@@ -67,9 +67,9 @@ export const WORKFLOW_TEMPLATES = [
     agents: ["browser-recon", "memory-legal"],
     browserCapability: "product-discovery",
     model: "bu-mini",
-    maxSteps: 12,
+    maxSteps: 20,
     maxRuntimeMs: 100000,
-    maxCostUsd: 0.3,
+    maxCostUsd: 0.45,
     showLive: false,
     outputSchema: actionWorkflowSchema({
       merchant: { type: "string" },
@@ -89,14 +89,111 @@ export const WORKFLOW_TEMPLATES = [
       }
     }),
     browserPrompt: ({ task }) => [
-      "You are GOFER's BrowserReconAgent. Research product options only. Do not add anything to cart unless the user explicitly asked for cart building.",
+      "You are GOFER's BrowserReconAgent. Research product options only. Return useful options quickly.",
       "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, or fee requires explicit user confirmation first.",
       `User request: ${task.title}`,
-      "If a merchant is named, start there. For Target flower requests, search Target for flower bouquets, arrangements, plants, or giftable floral items that fit the recipient.",
+      "Use web search as the primary source. Prefer search snippets and search result cards over navigating heavy retailer pages. Do not browse deeply.",
+      "Use at most two searches. If a merchant is named, search for that merchant plus the product category. Example pattern: site:target.com flowers bouquet gift mom.",
+      "Do not open cart pages, checkout pages, sign-in pages, account pages, or location-gated flows.",
+      "Infer the product category, recipient, occasion, budget, delivery/pickup needs, and quality signals from the user request.",
       "Find 3 to 5 strong options. Prefer items with visible price, availability, delivery or pickup path, and a useful product page.",
+      "If the retailer site is slow, blocked, or requires location/account state, do not keep clicking. Return the best options discovered from search snippets and mark availability as availability_not_verified.",
       "Do not checkout, do not enter payment, do not place an order, and do not click final purchase buttons.",
       "Return approval_required=true because the user must choose an option before GOFER builds a cart.",
       "Return JSON with: status, approval_required, merchant, recommended_option, options, next_action, blockers."
+    ].join(" ")
+  },
+  {
+    id: "food.order_options",
+    type: "product_discovery",
+    label: "Food order options",
+    match: /(doordash|order food|food order|takeout|delivery|menu|check.*restaurant)/i,
+    tools: ["browserUse", "supermemory", "agentMail"],
+    approvalGates: ["cart_build", "payment", "order_submission"],
+    agents: ["browser-recon", "memory-legal"],
+    browserCapability: "food-order-discovery",
+    model: "bu-mini",
+    maxSteps: 14,
+    maxRuntimeMs: 90000,
+    maxCostUsd: 0.35,
+    showLive: true,
+    outputSchema: actionWorkflowSchema({
+      merchant: { type: "string" },
+      recommended_option: { type: "string" },
+      options: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            price: { type: "string" },
+            why_it_fits: { type: "string" },
+            url_or_path: { type: "string" },
+            availability: { type: "string" }
+          }
+        }
+      }
+    }),
+    browserPrompt: ({ task, user }) => [
+      "You are GOFER's BrowserReconAgent. Research food ordering options only.",
+      "This is not a restaurant reservation task unless the user explicitly asks to reserve or book a table.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, tip, delivery fee, or order submission requires explicit user confirmation first.",
+      `User request: ${task.title}`,
+      `User base/location context: ${user.address || user.zip || "unknown"}.`,
+      "If the user explicitly mentions DoorDash, open https://www.doordash.com/ directly and use DoorDash visible search/results/menu controls. Do not use Google, DuckDuckGo, Yelp, Maps, or broad web search for explicit DoorDash requests.",
+      "For non-DoorDash food requests, use the fastest direct source available: the restaurant ordering page, DoorDash-style result page, or search snippets if no direct merchant is named.",
+      "Do not add to cart, open checkout, enter delivery/payment details, or place an order.",
+      "If a restaurant is named, find that restaurant's ordering/menu options and likely delivery or pickup channel.",
+      "If DoorDash asks for location, use the user base/location context. If it asks for login/OAuth/verification/CAPTCHA, stop and return approval_required=true with the exact blocker.",
+      "Return 3 to 5 orderable menu or restaurant options. Include item or restaurant name, likely price if visible, why it fits, ordering channel/path, and availability if visible.",
+      "If availability or delivery status is not visible, mark availability_not_verified and still return useful options.",
+      "Return approval_required=true because the user must choose an option before GOFER builds a cart.",
+      "Return JSON with: status, approval_required, merchant, recommended_option, options, next_action, blockers."
+    ].join(" ")
+  },
+  {
+    id: "food.doordash_cart_build",
+    type: "purchase",
+    label: "DoorDash cart build",
+    match: /(doordash).*(cart|checkout|approved synced Browser Use profile|add.*cart|build.*cart)|(cart|checkout|add.*cart|build.*cart).*(doordash)/i,
+    tools: ["browserUse", "sponge", "supermemory", "agentMail"],
+    approvalGates: ["payment", "order_submission"],
+    agents: ["browser-recon", "payment", "email-application", "memory-legal"],
+    browserCapability: "doordash-cart-build",
+    model: "bu-mini",
+    maxSteps: 20,
+    maxRuntimeMs: 180000,
+    maxCostUsd: 0.75,
+    showLive: true,
+    outputSchema: actionWorkflowSchema({
+      merchant: { type: "string" },
+      selected_items: {
+        type: "array",
+        items: { type: "string" }
+      },
+      subtotal: { type: "string" },
+      checkout_state: { type: "string" },
+      auth_required: { type: "boolean" }
+    }),
+    browserPrompt: ({ task, user }) => [
+      "You are GOFER's BrowserReconAgent. Build a DoorDash cart only. This is not restaurant discovery and not a table reservation.",
+      "Use the approved synced Browser Use profile if available. Do not start a new login flow unless the existing session has expired.",
+      "Global payment rule: any payment, card hold, deposit, authorization, wallet charge, tip confirmation, or order submission requires explicit user confirmation first.",
+      `User request: ${task.title}`,
+      `Delivery/location context if DoorDash asks: ${user.address || user.zip || "680 Folsom St, San Francisco, CA"}.`,
+      doordashStoreHint(task.title),
+      doordashItemHint(task.title),
+      "Extract the restaurant name from the request. If a restaurant is named, search DoorDash for that exact restaurant name first.",
+      "If an exact DoorDash store URL is provided above, open that exact URL first and do not search for the restaurant.",
+      "If no exact store URL is provided, open https://www.doordash.com/ directly. Do not use broad web search and do not browse unrelated restaurants.",
+      "If DoorDash asks for an address, enter the provided delivery/location context.",
+      "If the named restaurant is not found, return approval_required=true with blocker='restaurant_not_found' and stop.",
+      "Select one normal entree or popular item from the named restaurant. If a preferred item target is provided above and visible, use it.",
+      "Use default required options. Do not add extras unless required to add the item.",
+      "Add exactly one item to the cart, then stop at cart or checkout review.",
+      "If item clicks do not open a customization/add-item dialog after two attempts, stop and return approval_required=true with blocker='menu_item_not_clickable' and the item you tried.",
+      "If OAuth, phone verification, CAPTCHA, account creation, payment, card entry, or final place-order confirmation appears, stop immediately and return approval_required=true.",
+      "Return JSON with: status, approval_required, auth_required, merchant, selected_items, subtotal, checkout_state, next_action, blockers."
     ].join(" ")
   },
   {
@@ -170,9 +267,19 @@ export const WORKFLOW_TEMPLATES = [
     id: "phone.book_appointment",
     type: "appointment_booking",
     label: "Phone appointment",
-    match: /(book|schedule).*(dentist|doctor|haircut|appointment|cleaning)/i,
+    match: /(?:book|schedule|call).*(dentist|doctor|haircut|appointment|cleaning)/i,
     tools: ["browserUse", "moss", "agentPhone", "supermemory"],
     approvalGates: ["confirm_time"],
+    agents: ["phone-booking", "memory-legal"],
+    browserCapability: null
+  },
+  {
+    id: "phone.general_call",
+    type: "general_phone_call",
+    label: "Phone call",
+    match: /\bcall\b.*(?:\+?1[\s.-]*)?\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}/i,
+    tools: ["agentPhone", "supermemory"],
+    approvalGates: ["external_commitment"],
     agents: ["phone-booking", "memory-legal"],
     browserCapability: null
   },
@@ -213,7 +320,8 @@ export const WORKFLOW_TEMPLATES = [
 ];
 
 export function detectWorkflow(text) {
-  return WORKFLOW_TEMPLATES.find((template) => template.match.test(text)) || {
+  const id = inferWorkflowId(text);
+  return WORKFLOW_TEMPLATES.find((template) => template.id === id) || {
     id: "general.errand",
     type: "general_errand",
     label: "General errand",
@@ -238,6 +346,106 @@ export function detectWorkflow(text) {
       "Do not make payments, submit final orders, create accounts, or make irreversible commitments.",
       "Return JSON with: status, approval_required, completed_steps, next_action, blockers."
     ].join(" ")
+  };
+}
+
+function inferWorkflowId(text) {
+  const signals = readIntentSignals(text);
+
+  if (signals.availabilityFollowup) return "reservation.verify_availability";
+  if (signals.hasPhone && signals.callIntent) {
+    return signals.appointmentIntent ? "phone.book_appointment" : "phone.general_call";
+  }
+  if (signals.appointmentIntent) return "phone.book_appointment";
+  if (signals.billingIntent) return "billing.dispute_charge";
+  if (signals.formIntent) return "browser.fill_form";
+  if (signals.doordashIntent && (signals.cartPrepIntent || (signals.checkoutIntent && !signals.discoveryOnly))) {
+    return "food.doordash_cart_build";
+  }
+  if (signals.shoppingIntent && (signals.cartPrepIntent || (signals.checkoutIntent && !signals.discoveryOnly))) {
+    return "browser.purchase_until_checkout";
+  }
+  if (signals.foodOrderIntent) return "food.order_options";
+  if (signals.reservationIntent) return "reservation.find_and_book";
+  if (signals.shoppingIntent) {
+    return "browser.product_options";
+  }
+  return "general.errand";
+}
+
+function doordashStoreHint(title) {
+  const text = String(title || "").toLowerCase();
+  const hints = [
+    {
+      match: /aria korean street food|aria korean/i,
+      url: "https://www.doordash.com/en/store/aria-korean-street-food-san-francisco-161173/959830/"
+    },
+    {
+      match: /halal city/i,
+      url: "https://www.doordash.com/search/store/halal%20city/"
+    },
+    {
+      match: /deli board/i,
+      url: "https://www.doordash.com/search/store/deli%20board/"
+    },
+    {
+      match: /gai chicken rice/i,
+      url: "https://www.doordash.com/search/store/gai%20chicken%20rice/"
+    }
+  ];
+  const hint = hints.find((item) => item.match.test(text));
+  return hint
+    ? `Exact DoorDash store URL to open first: ${hint.url}`
+    : "No exact DoorDash store URL is known for this request.";
+}
+
+function doordashItemHint(title) {
+  const text = String(title || "").toLowerCase();
+  if (/aria korean street food|aria korean/i.test(text)) {
+    return "Preferred item target for Aria Korean Street Food: Bulgogi Fries. If unavailable, choose Korean Fried Chicken or another visible popular entree.";
+  }
+  if (/halal city/i.test(text)) {
+    return "Preferred item target for Halal City: Lamb over Rice or Chicken Gyro. If unavailable, choose another visible popular entree.";
+  }
+  if (/deli board/i.test(text)) {
+    return "Preferred item target for Deli Board: a signature sandwich. If unavailable, choose another visible popular entree.";
+  }
+  return "No preferred item target is known. Choose one visible popular entree or normal meal item.";
+}
+
+function readIntentSignals(value) {
+  const text = String(value || "").toLowerCase();
+  const hasPhone = /(?:\+?1[\s.-]*)?\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}/.test(text);
+  const callIntent = /\b(call|phone|dial|ring|ask)\b/.test(text);
+  const appointmentIntent = /\b(appointment|dentist|doctor|haircut|cleaning|schedule|book a time|book an appointment)\b/.test(text);
+  const cuisineOrRestaurant = /\b(restaurant|dinner|chinese|italian|sushi|mexican|thai|indian|korean|pizza|mediterranean|latin|asian|rotisserie)\b/.test(text);
+  const doordashIntent = /\bdoordash\b/.test(text);
+  const reservationIntent = /\b(book|reserve|reservation|table|party of|for \d+ people|team dinner|opentable|resy)\b/.test(text) ||
+    (cuisineOrRestaurant && /\b(tonight|tomorrow|around \d|at \d{1,2}(?::\d{2})?\s*(?:am|pm))\b/.test(text));
+  const foodOrderIntent = /\b(doordash|order\s+(?:some\s+)?food|food order|food delivery|takeout|pickup|delivery|deliver|menu|meal|lunch|dinner order|check.*restaurant|restaurant.*order)\b/.test(text) ||
+    (cuisineOrRestaurant && /\b(check|look up|find|food|eat|order|doordash|delivery|pickup|menu)\b/.test(text) && !reservationIntent);
+  const shoppingIntent = /\b(order|buy|send|shop|purchase|get|cart|checkout|delivery|flowers?|gift|cake|doordash|target|food|meal|takeout|pickup)\b/.test(text);
+  const discoveryOnly = /\b(best options?|options?|recommend|compare|look for|find|show me|research|don't checkout|do not checkout|no checkout|without checkout|before checkout|just give me)\b/.test(text);
+  const cartPrepIntent = /\b(build|make|prepare|continue)\b.*\bcart\b|\badd\b.*\bcart\b/i.test(text);
+  const checkoutIntent = /\b(proceed|continue)\b.*\bcheckout\b|\bcheckout\b|\bplace (?:the )?order\b|\bbuy it\b|\bpurchase it\b/i.test(text);
+  const formIntent = /\b(fill|submit|complete)\b.*\b(form|application|portal|request)\b/.test(text);
+  const billingIntent = /\b(dispute|refund|overcharge|charge|bill|billing|invoice)\b/.test(text);
+  const availabilityFollowup = /\b(verify live availability|prepare booking|check availability|confirm reservation path)\b/.test(text);
+
+  return {
+    hasPhone,
+    callIntent,
+    appointmentIntent,
+    doordashIntent,
+    foodOrderIntent,
+    reservationIntent,
+    shoppingIntent,
+    discoveryOnly,
+    cartPrepIntent,
+    checkoutIntent,
+    formIntent,
+    billingIntent,
+    availabilityFollowup
   };
 }
 

@@ -6,7 +6,32 @@ export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema,
   }
 
   try {
-    const response = await createBrowserUseTask({ task, metadata, maxCostUsd, outputSchema, model, sensitiveData });
+    if (shouldUseBrowserProfile(metadata)) {
+      await cleanupBrowserUseActiveSessions({ reason: "profile-task-preflight" }).catch(() => null);
+    }
+
+    let response = await createBrowserUseTask({ task, metadata, maxCostUsd, outputSchema, model, sensitiveData });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (isBrowserUseConcurrencyLimit(response.status, errorText)) {
+        const cleanup = await cleanupBrowserUseActiveSessions({ reason: "concurrency-limit" }).catch((error) => ({
+          stopped: [],
+          warning: error.message
+        }));
+        await wait(2000);
+        response = await createBrowserUseTask({ task, metadata, maxCostUsd, outputSchema, model, sensitiveData });
+        if (!response.ok) {
+          const retryErrorText = await response.text();
+          if (isBrowserUseConcurrencyLimit(response.status, retryErrorText)) {
+            return browserUseConcurrencyResult(retryErrorText, cleanup);
+          }
+          return browserUseRejectedResult(response.status, retryErrorText);
+        }
+      } else {
+        return browserUseRejectedResult(response.status, errorText);
+      }
+    }
 
     if (!response.ok) {
       return {
@@ -58,22 +83,78 @@ export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema,
   }
 }
 
+function browserUseRejectedResult(status, errorText) {
+  return {
+    mode: "real",
+    provider: "Browser Use",
+    result: "Browser Use API rejected the task.",
+    success: false,
+    warning: `Browser Use API returned ${status}: ${errorText}`
+  };
+}
+
+function browserUseConcurrencyResult(errorText, cleanup = {}) {
+  const output = {
+    status: "browser_use_capacity_limited",
+    approval_required: true,
+    auth_required: false,
+    current_page_state: "Browser Use rejected the task because this account is at its active-session limit.",
+    next_action: "Retry the task after the active Browser Use session finishes. GOFER already attempted active-session cleanup once.",
+    blocker: parseBrowserUseErrorDetail(errorText) || "Too many concurrent active Browser Use sessions.",
+    cleanup_stopped_sessions: cleanup.stopped?.length || 0,
+    cleanup_warning: cleanup.warning || null
+  };
+  return {
+    mode: "real",
+    provider: "Browser Use",
+    result: "Browser Use is at active-session capacity.",
+    success: false,
+    output: JSON.stringify(output),
+    actionRequired: {
+      type: "retry",
+      message: output.next_action,
+      blocker: output.blocker
+    },
+    warning: `Browser Use API returned 429: ${errorText}`,
+    data: output
+  };
+}
+
+function parseBrowserUseErrorDetail(errorText) {
+  try {
+    return JSON.parse(errorText)?.detail || null;
+  } catch {
+    return errorText || null;
+  }
+}
+
+function isBrowserUseConcurrencyLimit(status, errorText) {
+  return Number(status) === 429 || /too many concurrent active sessions|active-session limit|concurrent.*sessions/i.test(String(errorText || ""));
+}
+
 export async function testActualWebsite() {
   return runDoorDashCartDemo();
 }
 
 export async function runDoorDashDiscoveryDemo(options = {}) {
+  const hasProfile = Boolean(config.browserUse.profileId);
   return runBrowserTask({
     task: [
-      "You are GOFER's BrowserReconAgent running DoorDash public discovery only.",
-      "Do not sign in. Do not add anything to cart. Do not open checkout. Do not enter payment.",
-      "Use web search or public DoorDash pages to find restaurants and likely food choices near 680 Folsom St, San Francisco, CA.",
-      "Prioritize restaurants that are likely open for delivery/pickup and have normal entree items.",
+      "You are GOFER's BrowserReconAgent running DoorDash discovery only.",
+      hasProfile
+        ? "A persistent Browser Use profile is configured. Use existing DoorDash session state only; do not start a new login or OAuth flow."
+        : "No persistent profile is guaranteed. If DoorDash asks for login, OAuth, CAPTCHA, phone verification, or blocks browsing, stop and return auth_required=true.",
+      "Do not add anything to cart. Do not open checkout. Do not enter payment. Do not place an order.",
+      "Open https://www.doordash.com/ directly. Do not use Google, DuckDuckGo, Yelp, or broad web search.",
+      "If DoorDash asks for a delivery address, use 680 Folsom St, San Francisco, CA.",
+      "Use DoorDash visible search/results/category controls to find restaurants and likely food choices near that address.",
+      "Prioritize restaurants that are likely open for delivery/pickup and have normal entree items. Prefer fast, reasonably priced options.",
       "Return 3 options with restaurant_name, food_choices, why_it_fits, estimated_price, and next_action.",
-      "If DoorDash blocks access or asks for login, do not fail. Return the best public options found and set auth_required=false because cart-building is the later authenticated step.",
+      "If DoorDash blocks direct discovery, do not fall back to web search; return the exact blocker and current page state.",
+      "Set auth_required=true only if DoorDash requires login/OAuth/verification/CAPTCHA to continue.",
       "Return structured output with: status, auth_required, options, recommended_option, current_page_state, user_instruction, blocker."
     ].join(" "),
-    maxCostUsd: 0.25,
+    maxCostUsd: 0.45,
     model: "bu-mini",
     outputSchema: {
       type: "object",
@@ -105,9 +186,10 @@ export async function runDoorDashDiscoveryDemo(options = {}) {
     },
     metadata: {
       capability: "doordash-discovery",
-      safety: "public-discovery-before-auth",
-      maxSteps: 8,
-      maxRuntimeMs: 70000
+      safety: "direct-doordash-discovery",
+      useBrowserProfile: hasProfile,
+      maxSteps: 18,
+      maxRuntimeMs: 90000
     }
   }, options);
 }
@@ -159,6 +241,7 @@ export async function runDoorDashCartDemo(options = {}) {
       safety: "stop-before-checkout",
       requiresProfileForReliability: true,
       hasProfile,
+      useBrowserProfile: true,
       maxSteps: 10,
       maxRuntimeMs: 90000
     }
@@ -178,21 +261,42 @@ export async function runPatientPortalDemo(options = {}) {
   };
   return runBrowserTask({
     task: [
-      `Open ${portalUrl}.`,
-      "Fill the patient appointment portal for Ajoson.",
+      `Open this exact URL: ${portalUrl}`,
+      "Fill and submit the Dr. Carl Dental appointment request form.",
+      "Patient name: Ajoson.",
       "Appointment type: Routine dental appointment.",
       "Preferred day: Wednesday.",
       "Preferred time: 3:00 PM.",
       "Insurance provider: Delta Dental PPO.",
       "Member ID: <secret>member_id</secret>.",
-      "Group number: <secret>group_number</secret>.",
       "Notes: Please confirm any available appointment this week between 2 PM and 5 PM.",
-      "Submit the appointment request.",
-      "Return the confirmation title and reference number. Do not echo the member ID or group number in the output; reference them as 'on file' if needed."
+      "Click the submit/request button once.",
+      "Stop as soon as a confirmation/reference appears.",
+      "Return JSON with status, confirmation_title, reference_number, fields_completed, and next_action. Do not echo the member ID or group number."
     ].join(" "),
-    maxCostUsd: 0.5,
+    maxCostUsd: 0.35,
+    model: "bu-mini",
+    outputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string" },
+        confirmation_title: { type: "string" },
+        reference_number: { type: "string" },
+        fields_completed: {
+          type: "array",
+          items: { type: "string" }
+        },
+        next_action: { type: "string" }
+      },
+      required: ["status", "confirmation_title", "reference_number", "fields_completed"]
+    },
     sensitiveData,
-    metadata: { capability: "patient-portal-form", url: portalUrl }
+    metadata: {
+      capability: "patient-portal-form",
+      url: portalUrl,
+      maxSteps: 10,
+      maxRuntimeMs: 70000
+    }
   }, options);
 }
 
@@ -202,7 +306,66 @@ function browserReachablePortalUrl() {
     return `${base}/demo/patient-portal.html`;
   }
 
-  const html = `<!doctype html><html><head><title>Dr Carl Dental Portal</title></head><body><h1>Dr Carl Dental Portal</h1><form><label>Patient <input name="patient"></label><br><label>Type <input name="type"></label><br><label>Day <input name="day"></label><br><label>Time <input name="time"></label><br><label>Insurance <input name="insurance"></label><br><label>Member ID <input name="member"></label><br><label>Notes <textarea name="notes"></textarea></label><br><button type="button">Save request</button></form><p id="reference">Reference after save: CARL-DEMO-2048</p></body></html>`;
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dr Carl Dental Portal</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:32px;background:#f7f8fb;color:#17202a}
+    main{max-width:640px;margin:auto;background:white;border:1px solid #d9dee5;border-radius:8px;padding:24px}
+    label{display:block;margin:12px 0;font-weight:700}
+    input,select,textarea{display:block;width:100%;box-sizing:border-box;margin-top:5px;padding:10px;border:1px solid #c9d1dc;border-radius:6px;font:inherit}
+    button{margin-top:12px;padding:12px 16px;border:0;border-radius:6px;background:#17202a;color:white;font-weight:800}
+    #confirmation{display:none;margin-top:18px;padding:16px;border:1px solid #b8e5c2;background:#eefaf1;border-radius:8px}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Dr Carl Dental Portal</h1>
+    <p>Submit appointment requests for routine dental visits. Afternoon slots are prioritized this week.</p>
+    <form id="appointment-form">
+      <label>Patient name <input id="patient" name="patient" autocomplete="name" required></label>
+      <label>Appointment type
+        <select id="type" name="type" required>
+          <option value="">Select one</option>
+          <option>Routine dental appointment</option>
+          <option>Cleaning</option>
+          <option>Consultation</option>
+        </select>
+      </label>
+      <label>Preferred day
+        <select id="day" name="day" required>
+          <option value="">Select one</option>
+          <option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option>
+        </select>
+      </label>
+      <label>Preferred time
+        <select id="time" name="time" required>
+          <option value="">Select one</option>
+          <option>2:00 PM</option><option>3:00 PM</option><option>4:00 PM</option><option>5:00 PM</option>
+        </select>
+      </label>
+      <label>Insurance provider <input id="insurance" name="insurance" required></label>
+      <label>Member ID <input id="member" name="member" required></label>
+      <label>Notes for office <textarea id="notes" name="notes"></textarea></label>
+      <button id="submit-request" type="submit">Submit appointment request</button>
+    </form>
+    <section id="confirmation" aria-live="polite">
+      <h2>Appointment request received</h2>
+      <p>Reference: <strong>CARL-DEMO-2048</strong></p>
+      <p>The office will confirm the selected 2 PM to 5 PM appointment window by phone.</p>
+    </section>
+  </main>
+  <script>
+    document.getElementById('appointment-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      document.getElementById('confirmation').style.display = 'block';
+      document.getElementById('confirmation').scrollIntoView();
+    });
+  </script>
+</body>
+</html>`;
 
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
@@ -274,7 +437,7 @@ async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputS
   if (outputSchema) {
     body.outputSchema = outputSchema;
   }
-  if (config.browserUse.profileId) {
+  if (config.browserUse.profileId && shouldUseBrowserProfile(metadata)) {
     body.profileId = config.browserUse.profileId;
   }
   if (sensitiveData && Object.keys(sensitiveData).length > 0) {
@@ -293,6 +456,56 @@ async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputS
   return response;
 }
 
+function shouldUseBrowserProfile(metadata = {}) {
+  if (metadata.useBrowserProfile === true || metadata.profileApproved === true) return true;
+  if (!config.browserUse.profileId) return false;
+  const foodCapabilities = ["food-order-discovery", "doordash-cart-build", "doordash-discovery", "doordash-cart-demo"];
+  return foodCapabilities.includes(metadata.capability || "");
+}
+
+export async function cleanupBrowserUseActiveSessions({ reason = "cleanup" } = {}) {
+  if (!config.browserUse.apiKey) return { stopped: [], reason };
+  const origin = browserUseApiOrigin();
+  const response = await fetch(`${origin}/api/v3/sessions`, {
+    headers: {
+      "X-Browser-Use-API-Key": config.browserUse.apiKey
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`Browser Use session list failed with ${response.status}: ${await response.text()}`);
+  }
+  const payload = await response.json();
+  const sessions = normalizeBrowserUseSessionList(payload);
+  const active = sessions.filter(isBrowserUseActiveSession);
+  const stopped = [];
+  for (const session of active) {
+    const sessionId = session.id || session.sessionId;
+    if (!sessionId) continue;
+    const result = await stopBrowserUseSession(sessionId).catch((error) => ({ error: error.message }));
+    stopped.push({
+      sessionId,
+      status: session.status || session.sessionStatus || "unknown",
+      title: session.title || session.task || session.taskTitle || null,
+      result
+    });
+  }
+  return { stopped, reason };
+}
+
+function normalizeBrowserUseSessionList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.sessions)) return payload.sessions;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+}
+
+function isBrowserUseActiveSession(session) {
+  const status = String(session?.status || session?.sessionStatus || "").toLowerCase();
+  if (!status) return false;
+  return ["running", "active", "created", "queued", "starting", "pending", "in_progress"].includes(status);
+}
+
 function shouldStopBrowserUseSession(session, { maxCostUsd, isAnonymousDoorDash, maxSteps }) {
   const totalCost = Number(session?.totalCostUsd || 0);
   if (maxCostUsd && totalCost >= maxCostUsd) return true;
@@ -305,11 +518,15 @@ function buildLocalStopOutput(session, { maxCostUsd, isAnonymousDoorDash, maxSte
   const status = session?.status || "unknown";
   const cost = session?.totalCostUsd || "unknown";
   const steps = session?.stepCount ?? "unknown";
+  const lastStepSummary = session?.lastStepSummary || null;
+  const screenshotUrl = session?.screenshotUrl || null;
   if (isAnonymousDoorDash) {
     return JSON.stringify({
       status: "action_required",
       auth_required: true,
       current_page_state: `GOFER stopped the anonymous DoorDash run after ${steps} steps at $${cost}.`,
+      last_step: lastStepSummary,
+      screenshot_url: screenshotUrl,
       user_instruction: "Sign in to DoorDash through a Browser Use persistent profile, then rerun the cart step.",
       blocker: "DoorDash anonymous browsing is consuming Browser Use steps/cost without reaching a safe cart state. A persistent authenticated profile is required for checkout-level automation."
     });
@@ -317,8 +534,12 @@ function buildLocalStopOutput(session, { maxCostUsd, isAnonymousDoorDash, maxSte
   if (maxSteps && Number(steps) >= maxSteps) {
     return JSON.stringify({
       status: "stopped_by_gofer",
+      approval_required: true,
       auth_required: false,
       current_page_state: `GOFER stopped Browser Use after ${steps} steps at $${cost}.`,
+      last_step: lastStepSummary,
+      screenshot_url: screenshotUrl,
+      next_action: "Retry with a narrower browser task, approve a fallback tool such as phone/email, or provide authentication/profile state if the site is blocked.",
       blocker: "The Browser Use task exceeded GOFER's step budget before producing the required workflow result."
     });
   }
@@ -397,12 +618,22 @@ function detectActionRequired(session) {
   const output = session?.output;
   const parsed = parseOutput(output);
   const text = typeof output === "string" ? output : JSON.stringify(output || {});
+  if (parsed?.status === "browser_use_capacity_limited") {
+    return {
+      type: "retry",
+      message: parsed.next_action || "Retry after Browser Use active-session capacity is available.",
+      blocker: parsed.blocker || "Browser Use active-session limit reached."
+    };
+  }
   if (parsed?.auth_required === true) {
     return {
       type: "auth",
       message: parsed.user_instruction || "Please sign in in the live Browser Use session, then rerun the cart step.",
       blocker: parsed.blocker || "DoorDash requires authentication."
     };
+  }
+  if (parsed?.auth_required === false) {
+    return null;
   }
   if (/BLOCKED_BY_AUTH_MODAL|auth_required["']?\s*:\s*true|auth required|sign in|login|oauth|verification|captcha/i.test(text)) {
     return {
@@ -531,6 +762,84 @@ async function simulateBrowserTask({ task, metadata }) {
     };
   }
 
+  if (capability === "product-discovery") {
+    return {
+      mode: "simulated",
+      provider: "Browser Use",
+      result: "Product options found. User choice required before cart or checkout.",
+      output: JSON.stringify({
+        status: "Found product options.",
+        approval_required: true,
+        merchant: inferMerchantFromTask(task) || "Suggested merchant",
+        recommended_option: "Mom-friendly bouquet option",
+        options: [
+          {
+            name: "Seasonal bouquet",
+            price: "$25-$40",
+            why_it_fits: "Classic gift option with a warmer, celebratory feel.",
+            url_or_path: "Search result or merchant product page",
+            availability: "availability_not_verified"
+          },
+          {
+            name: "Potted orchid",
+            price: "$30-$50",
+            why_it_fits: "Lasts longer than cut flowers and feels more premium for Mom.",
+            url_or_path: "Search result or merchant product page",
+            availability: "availability_not_verified"
+          },
+          {
+            name: "Rose and lily arrangement",
+            price: "$35-$60",
+            why_it_fits: "Giftable arrangement with strong visual impact.",
+            url_or_path: "Search result or merchant product page",
+            availability: "availability_not_verified"
+          }
+        ],
+        next_action: "Choose an option before GOFER builds a cart. GOFER will still stop before checkout and payment.",
+        blockers: []
+      })
+    };
+  }
+
+  if (capability === "food-order-discovery") {
+    return {
+      mode: "simulated",
+      provider: "Browser Use",
+      result: "Food ordering options found. User choice required before cart or checkout.",
+      output: JSON.stringify({
+        status: "Found food order options.",
+        approval_required: true,
+        merchant: inferMerchantFromTask(task) || "Restaurant delivery",
+        recommended_option: "Recommended entree option",
+        options: [
+          {
+            name: "Restaurant signature entree",
+            price: "$15-$25",
+            why_it_fits: "Good default meal option for delivery or pickup.",
+            url_or_path: "Public menu or delivery listing",
+            availability: "availability_not_verified"
+          },
+          {
+            name: "Shareable side or appetizer",
+            price: "$8-$15",
+            why_it_fits: "Useful add-on if ordering for more than one person.",
+            url_or_path: "Public menu or delivery listing",
+            availability: "availability_not_verified"
+          },
+          {
+            name: "Popular bowl or plate",
+            price: "$14-$22",
+            why_it_fits: "Likely delivery-friendly and easy to customize.",
+            url_or_path: "Public menu or delivery listing",
+            availability: "availability_not_verified"
+          }
+        ],
+        next_action: "Choose a food option before GOFER builds a cart. GOFER will still stop before checkout and payment.",
+        blockers: []
+      })
+    };
+  }
+
   if (capability === "doordash-discovery") {
     return {
       mode: "simulated",
@@ -570,12 +879,45 @@ async function simulateBrowserTask({ task, metadata }) {
     };
   }
 
+  if (capability === "injected-workflow") {
+    return {
+      mode: "simulated",
+      provider: "Browser Use",
+      result: "Injected workflow completed reversible preparation.",
+      output: JSON.stringify({
+        status: "Prepared injected workflow result.",
+        approval_required: true,
+        completed_steps: [
+          "Interpreted the foreign request.",
+          "Selected the safest available sponsor tools.",
+          "Prepared reversible next steps only."
+        ],
+        findings: [
+          {
+            title: "Workflow ready",
+            detail: "GOFER can continue with browser research, phone, email, or payment tooling depending on user approval.",
+            source_or_path: "WorkflowInjectorAgent"
+          }
+        ],
+        recommended_next_step: "Ask the user to approve the proposed next action or clarify missing details.",
+        next_action: "Approve the proposed next action or provide missing details. GOFER will not take irreversible action without confirmation.",
+        blockers: []
+      })
+    };
+  }
+
   return {
     mode: "simulated",
     provider: "Browser Use",
     result: "Browser task completed.",
     task
   };
+}
+
+function inferMerchantFromTask(task) {
+  const text = String(task || "");
+  const match = text.match(/\b(target|doordash|amazon|walmart|costco|instacart|whole foods|trader joe'?s|cantoo|urbanstems|bouqs|farmgirl)\b/i);
+  return match ? match[0] : null;
 }
 
 function wait(ms) {
