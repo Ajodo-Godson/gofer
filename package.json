@@ -6,9 +6,13 @@
   "scripts": {
     "build": "node -e \"console.log('No build step needed for GOFER. Static assets and server are ready.')\"",
     "dev": "node src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "moss:build-index": "node scripts/moss-build-index.mjs"
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@moss-dev/moss": "1.0.2"
   }
 }

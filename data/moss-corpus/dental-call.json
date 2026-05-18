@@ -1,0 +1,97 @@
+{
+  "indexName": "gofer-dental-call",
+  "topic": "dental-appointment-booking",
+  "description": "Playbook snippets retrieved at sub-10ms during AgentPhone calls to dental providers. Each document is one short, self-contained instruction the agent can quote or paraphrase. Keep entries under ~280 chars so the LLM can use them inline without restructuring.",
+  "documents": [
+    {
+      "id": "open-greeting",
+      "text": "Open with: 'Hi, this is calling on behalf of the patient to book a dental appointment.' State the patient name and the appointment type. Keep the opening under two sentences.",
+      "metadata": { "topic": "opening", "stage": "greeting" }
+    },
+    {
+      "id": "ask-availability",
+      "text": "When asking for availability, state the specific time window you want first, then ask for the earliest matching slot. Example: 'I'm hoping for any time between 2 PM and 5 PM this week. What's the earliest slot you have open?'",
+      "metadata": { "topic": "availability", "stage": "scheduling" }
+    },
+    {
+      "id": "verify-insurance-when-asked",
+      "text": "If the receptionist asks about insurance, give the dental provider name first, then member ID, then group number. Confirm whether they need any of those values repeated. Do not volunteer the SSN.",
+      "metadata": { "topic": "insurance", "stage": "verification" }
+    },
+    {
+      "id": "copay-question",
+      "text": "If asked about copay, say you do not have the copay amount and would like the office to share what they have on file for the plan. Do not invent a number.",
+      "metadata": { "topic": "insurance", "stage": "verification" }
+    },
+    {
+      "id": "new-patient-paperwork",
+      "text": "If they say new-patient paperwork is required, ask whether it can be sent by email or filled out 15 minutes before the appointment. Note the choice for the user.",
+      "metadata": { "topic": "paperwork", "stage": "scheduling" }
+    },
+    {
+      "id": "hold-handling",
+      "text": "If you are placed on hold, stay quiet. Do not narrate or repeat the request. When the line returns, briefly restate the appointment type and time window in one sentence.",
+      "metadata": { "topic": "hold", "stage": "scheduling" }
+    },
+    {
+      "id": "confirm-time-explicitly",
+      "text": "Before ending the call, repeat the booked date, day of week, time, and provider name back to the receptionist and ask them to confirm. Example: 'So that's Wednesday the 21st at 3 PM with Dr. Park, correct?' Wait for verbal confirmation.",
+      "metadata": { "topic": "confirmation", "stage": "closing" }
+    },
+    {
+      "id": "callback-number",
+      "text": "If the office offers to call back, give the patient callback number rather than the agent number. Confirm spelling of the patient name.",
+      "metadata": { "topic": "callback", "stage": "closing" }
+    },
+    {
+      "id": "voicemail-leave",
+      "text": "If you reach voicemail, leave the patient name, the appointment type, the preferred time window, and the callback number in that order. Keep the message under 25 seconds and offer no internal-policy details.",
+      "metadata": { "topic": "voicemail", "stage": "fallback" }
+    },
+    {
+      "id": "wrong-number",
+      "text": "If the answering party is not the dental office (wrong number, residence, business unrelated to dentistry), apologize, say you must have dialed wrong, and end the call without volunteering further information about the patient.",
+      "metadata": { "topic": "wrong-number", "stage": "fallback" }
+    },
+    {
+      "id": "human-takeover",
+      "text": "If the receptionist explicitly asks to speak with the patient or refuses to book without speaking to the patient directly, do not push. Acknowledge the request, note that the patient will follow up, and end the call politely.",
+      "metadata": { "topic": "human-takeover", "stage": "fallback" }
+    },
+    {
+      "id": "in-network-question",
+      "text": "If asked whether the patient is in-network, state the dental provider plan name and ask the office to confirm against their list. Do not assert in-network status without their confirmation.",
+      "metadata": { "topic": "insurance", "stage": "verification" }
+    },
+    {
+      "id": "appointment-type-cleaning",
+      "text": "Routine cleaning typically means a 30 to 60 minute slot, sometimes paired with a checkup. If the office asks whether the patient needs a checkup at the same time, say yes unless the user note says otherwise.",
+      "metadata": { "topic": "appointment-type", "stage": "scheduling" }
+    },
+    {
+      "id": "preferred-time-flexible",
+      "text": "If the user said 'this week between 2 PM and 5 PM' but no slot is available in that window, ask for the next nearest morning or early afternoon slot. Do not extend into evenings without re-confirming.",
+      "metadata": { "topic": "availability", "stage": "scheduling" }
+    },
+    {
+      "id": "cancellation-policy",
+      "text": "If the office mentions a cancellation or no-show fee, acknowledge it ('understood') without committing the patient to anything beyond the booked appointment. Note the policy for the user summary.",
+      "metadata": { "topic": "policy", "stage": "scheduling" }
+    },
+    {
+      "id": "do-not-share",
+      "text": "Never share the patient's full SSN, full date of birth, address, or insurance card images on the call. If pushed, say those will be provided in person at check-in.",
+      "metadata": { "topic": "privacy", "stage": "verification" }
+    },
+    {
+      "id": "end-call-cleanly",
+      "text": "End the call with: 'Thank you for your help, have a good day.' Do not promise a follow-up email or callback unless the office explicitly requested one.",
+      "metadata": { "topic": "closing", "stage": "closing" }
+    },
+    {
+      "id": "phone-only-provider",
+      "text": "Some providers (like Dr. Carl in this demo) are phone-only and have no online portal. Do not say 'I will book online instead' if a slot is unavailable; offer to call back at a later time the office prefers.",
+      "metadata": { "topic": "provider-type", "stage": "scheduling" }
+    }
+  ]
+}

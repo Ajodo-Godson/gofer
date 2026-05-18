@@ -1,9 +1,16 @@
 import { config } from "../lib/config.js";
 
-export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema, model, sensitiveData }, options = {}) {
+export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema, model, sensitiveData, enableRecording, recordEvenWithSecrets }, options = {}) {
   if (!config.demo.allowBrowserUseLiveTask || !config.browserUse.apiKey) {
     return simulateBrowserTask({ task, metadata });
   }
+
+  // Privacy guard: a session that uses sensitiveData fills real values into
+  // form fields, and a video of the browser captures those values verbatim.
+  // Recording undoes the secrecy of sensitiveData, so we refuse to record
+  // unless the caller explicitly opts in with recordEvenWithSecrets.
+  const hasSecrets = sensitiveData && Object.keys(sensitiveData).length > 0;
+  const shouldRecord = Boolean(enableRecording) && (!hasSecrets || recordEvenWithSecrets === true);
 
   try {
     if (shouldUseBrowserProfile(metadata)) {
@@ -59,6 +66,13 @@ export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema,
       output: `Polling failed: ${error.message}`
     }));
     const finalData = completed || data;
+    // Recording URLs are populated asynchronously after the session ends.
+    // Per Browser Use docs: presigned, expire after 1 hour, may be empty
+    // for tasks that never opened a browser. We wait briefly for the file
+    // to be ready and then return whatever the session has.
+    const recordingUrls = shouldRecord
+      ? await waitForRecordingUrls(sessionId, finalData)
+      : [];
     const success = normalizeSuccess(finalData);
     return {
       mode: "real",
@@ -70,6 +84,10 @@ export async function runBrowserTask({ task, metadata, maxCostUsd, outputSchema,
       output: normalizeOutput(finalData),
       actionRequired: detectActionRequired(finalData),
       success,
+      recordingUrls,
+      recordingSkippedReason: enableRecording && !shouldRecord
+        ? "Recording suppressed because sensitiveData was used. Set recordEvenWithSecrets=true on the workflow to override."
+        : null,
       data: finalData
     };
   } catch (error) {
@@ -417,7 +435,7 @@ async function pollBrowserUseSession(sessionId, options = {}) {
   };
 }
 
-async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputSchema, model = "claude-sonnet-4.6", sensitiveData }) {
+async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputSchema, model = "claude-sonnet-4.6", sensitiveData, enableRecording = false }) {
   const v3BaseUrl = browserUseApiOrigin();
   const body = {
     task,
@@ -425,7 +443,7 @@ async function createBrowserUseTask({ task, metadata, maxCostUsd = 0.75, outputS
     keepAlive: false,
     maxCostUsd,
     proxyCountryCode: "us",
-    enableRecording: false,
+    enableRecording: Boolean(enableRecording),
     agentmail: false,
     skills: false,
     metadata
@@ -581,6 +599,41 @@ async function stopBrowserUseSession(sessionId) {
   });
   if (!response.ok) return null;
   return response.json();
+}
+
+// Recording URLs are populated asynchronously after a session ends. Per the
+// Browser Use docs, the SDK helper waits up to ~15s; we replicate that with
+// short polls. Returns [] when no recording is available (e.g. tasks that
+// never opened a browser) instead of throwing.
+async function waitForRecordingUrls(sessionId, finalData) {
+  const initial = extractRecordingUrls(finalData);
+  if (initial.length > 0) return initial;
+  if (!sessionId) return [];
+
+  const origin = browserUseApiOrigin();
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    await wait(1000);
+    try {
+      const response = await fetch(`${origin}/api/v3/sessions/${sessionId}`, {
+        headers: { "X-Browser-Use-API-Key": config.browserUse.apiKey }
+      });
+      if (!response.ok) continue;
+      const session = await response.json();
+      const urls = extractRecordingUrls(session);
+      if (urls.length > 0) return urls;
+    } catch {
+      // Network blip; let the loop try again until the deadline.
+    }
+  }
+  return [];
+}
+
+function extractRecordingUrls(session) {
+  if (!session) return [];
+  const candidates = session.recordingUrls || session.recording_urls || [];
+  if (!Array.isArray(candidates)) return [];
+  return candidates.filter((url) => typeof url === "string" && url.length > 0);
 }
 
 function isBrowserUseTerminal(session) {

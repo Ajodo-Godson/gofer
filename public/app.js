@@ -234,6 +234,12 @@ function renderArtifact(artifact) {
   const liveUrl = normalizeLiveUrl(artifact.liveUrl || artifact.live_url);
   const screenshotUrl = normalizeLiveUrl(artifact.screenshotUrl || artifact.screenshot_url);
   const title = artifact.kind === "browser" ? "Web research result" : artifact.title || artifact.kind;
+  const recordingUrls = Array.isArray(artifact.recordingUrls)
+    ? artifact.recordingUrls.filter((url) => typeof url === "string" && url.length > 0)
+    : [];
+  const memoryMatches = Array.isArray(artifact.matches)
+    ? artifact.matches.filter((match) => match && typeof match.content === "string")
+    : [];
   return `
     <div class="artifact">
       <div>
@@ -245,6 +251,40 @@ function renderArtifact(artifact) {
         ${liveUrl ? renderLiveLink(liveUrl) : ""}
         ${screenshotUrl ? renderScreenshotLink(screenshotUrl) : ""}
       </div>
+    </div>
+  `;
+}
+
+function renderMemoryMatches(matches) {
+  return `
+    <div class="memory-matches">
+      ${matches.map((match) => `
+        <div class="memory-match">
+          <div class="memory-match-head">
+            ${match.title ? `<strong>${escapeHtml(match.title)}</strong>` : `<strong>Memory match</strong>`}
+            ${typeof match.score === "number" ? `<span class="subtle">score ${escapeHtml(match.score)}</span>` : ""}
+          </div>
+          <div class="subtle">${escapeHtml(truncateForDisplay(match.content, 220))}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function truncateForDisplay(value, max) {
+  const str = String(value || "");
+  return str.length > max ? `${str.slice(0, max - 1)}…` : str;
+}
+
+function renderRecordingLinks(urls) {
+  return `
+    <div class="recording-links">
+      ${urls.map((url, index) => `
+        <a class="recording-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">
+          Download MP4${urls.length > 1 ? ` (${index + 1})` : ""}
+        </a>
+      `).join("")}
+      <div class="subtle">Presigned URL expires within 1 hour.</div>
     </div>
   `;
 }

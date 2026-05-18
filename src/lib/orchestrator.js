@@ -89,6 +89,16 @@ async function runTask(runId, task) {
       results: [],
       warning: "Memory lookup failed; continuing without remote memory."
     });
+    const matches = Array.isArray(memory.topMatches) ? memory.topMatches : [];
+    const detailParts = [];
+    if (memory.mode === "real") {
+      detailParts.push(matches.length ? `${matches.length} memories from Supermemory.` : "No prior memories matched.");
+      if (memory.timingMs !== null && memory.timingMs !== undefined) {
+        detailParts.push(`Search took ${memory.timingMs}ms.`);
+      }
+    } else {
+      detailParts.push(`${matches.length || memory.results?.length || 0} local memories.`);
+    }
     addArtifact(runId, task.id, {
       kind: "memory",
       title: "Supermemory lookup",
@@ -225,6 +235,22 @@ async function runWorkflowTemplateTask(runId, task, templateOverride = null) {
       actionRequired: browser.actionRequired || null,
       warning: browser.warning || null
     });
+
+    if (Array.isArray(browser.recordingUrls) && browser.recordingUrls.length > 0) {
+      addArtifact(runId, task.id, {
+        kind: "recording",
+        title: "Session recording",
+        detail: "Browser Use captured an MP4 of this session. Presigned URL expires within 1 hour.",
+        recordingUrls: browser.recordingUrls,
+        sessionId: browser.sessionId || null
+      });
+    } else if (browser.recordingSkippedReason) {
+      addArtifact(runId, task.id, {
+        kind: "recording",
+        title: "Session recording skipped",
+        detail: browser.recordingSkippedReason
+      });
+    }
 
     if (template.type === "restaurant_reservation" && hasUsableReservationOutput(browser)) {
       await runRestaurantReservationFollowup(runId, task, browser);

@@ -119,6 +119,13 @@ const server = createServer(async (req, res) => {
       return handleAgentPhoneWebhook(req, res);
     }
 
+    if (
+      ["/api/agentmail/webhook", "/webhooks/agentmail"].includes(url.pathname) &&
+      req.method === "POST"
+    ) {
+      return handleAgentMailWebhook(req, res);
+    }
+
     if (url.pathname === "/api/events") {
       return eventStream(req, res);
     }
@@ -265,6 +272,144 @@ function verifyAgentPhoneSignature(rawBody, signature) {
   const expectedBuffer = Buffer.from(expected);
   const signatureBuffer = Buffer.from(signature);
   return expectedBuffer.length === signatureBuffer.length && timingSafeEqual(expectedBuffer, signatureBuffer);
+}
+
+async function handleAgentMailWebhook(req, res) {
+  // Read body with a hard cap so the endpoint is not a free DoS target.
+  // 1 MB is well above AgentMail's typical message-received payload but
+  // bounded enough that a misbehaving caller cannot exhaust memory.
+  const limit = 1 * 1024 * 1024;
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > limit) {
+      return json(res, { error: "Request body too large" }, 413);
+    }
+    chunks.push(chunk);
+  }
+  const rawBody = Buffer.concat(chunks);
+
+  // Fail closed: refuse to act on unsigned events. Webhook secret is required.
+  if (!config.agentMail.webhookSecret) {
+    return json(res, { error: "AgentMail webhook secret not configured" }, 503);
+  }
+  const verification = verifyAgentMailSignature(rawBody, req.headers);
+  if (!verification.ok) {
+    return json(res, { error: "Invalid webhook signature" }, 401);
+  }
+
+  let payload;
+  try {
+    payload = rawBody.length ? JSON.parse(rawBody.toString("utf8")) : {};
+  } catch {
+    return json(res, { error: "Invalid JSON" }, 400);
+  }
+
+  const inbound = parseInboundEmailEvent(payload);
+  if (!inbound) {
+    // Ack non-message events so AgentMail does not retry, but emit a low-noise
+    // event so we can see what came through.
+    emit("agentmail.webhook", {
+      eventType: payload?.event_type || payload?.eventType || "unknown",
+      handled: false
+    });
+    return json(res, { ok: true, handled: false });
+  }
+
+  emit("agentmail.received", {
+    eventType: inbound.eventType,
+    eventId: inbound.eventId,
+    inboxId: inbound.inboxId,
+    threadId: inbound.threadId,
+    messageId: inbound.messageId,
+    inReplyTo: inbound.inReplyTo,
+    from: inbound.from,
+    subject: inbound.subject,
+    preview: inbound.preview,
+    receivedAt: inbound.receivedAt
+  });
+
+  // Surface the reply to the user in chat. Read-only: we never auto-reply,
+  // never act on the contents - that would need its own approval flow.
+  surfaceInboundEmailToChat(inbound);
+
+  return json(res, { ok: true, handled: true });
+}
+
+// Posts an assistant chat message describing the inbound email and tries to
+// link it to a recently-active task so the user can spot a relevant reply.
+// Best-effort - if we cannot find a sensible task, the message still goes
+// out so the user sees that an email arrived.
+function surfaceInboundEmailToChat(inbound) {
+  const state = getState();
+  const linkedTask = findLinkedTaskForInboundEmail(state, inbound);
+  const fromLabel = inbound.from || "an unknown sender";
+  const subjectLabel = inbound.subject ? `“${inbound.subject}”` : "(no subject)";
+  const previewLabel = inbound.preview
+    ? ` Preview: “${truncate(inbound.preview, 220)}”.`
+    : "";
+  const taskLine = linkedTask
+    ? ` This may be related to: ${linkedTask.title}.`
+    : "";
+  const content = `Got an email reply from ${fromLabel}. Subject: ${subjectLabel}.${taskLine}${previewLabel} I will not act on this until you tell me to.`;
+
+  addChatMessage("assistant", content, {
+    source: "agentmail.received",
+    threadId: inbound.threadId || null,
+    messageId: inbound.messageId || null,
+    inReplyTo: inbound.inReplyTo || null,
+    from: inbound.from || null,
+    subject: inbound.subject || null,
+    runId: linkedTask?.runId || null,
+    taskId: linkedTask?.taskId || null
+  });
+}
+
+// Heuristic: prefer a task that is awaiting a response (status pending /
+// awaiting_approval / running) and whose title shares meaningful words with
+// the email subject. Falls back to the most recent run's first task. Returns
+// null if there is no active run at all.
+function findLinkedTaskForInboundEmail(state, inbound) {
+  const runs = state.runs || [];
+  if (runs.length === 0) return null;
+
+  const subjectTokens = tokenize(inbound.subject);
+  const candidateStatuses = new Set(["pending", "awaiting_approval", "running"]);
+
+  // Score: status weight + token overlap with subject.
+  let best = null;
+  for (const run of runs) {
+    for (const task of run.tasks || []) {
+      const statusScore = candidateStatuses.has(task.status) ? 2 : 0;
+      const titleTokens = tokenize(task.title);
+      const overlap = subjectTokens.filter((token) => titleTokens.includes(token)).length;
+      const score = statusScore + overlap;
+      if (score === 0) continue;
+      if (!best || score > best.score) {
+        best = { score, runId: run.id, taskId: task.id, title: task.title };
+      }
+    }
+  }
+  if (best) return best;
+
+  // No score; default to the most recent run's first task so the user has a
+  // pointer rather than an orphan message.
+  const fallback = runs[0]?.tasks?.[0];
+  if (!fallback) return null;
+  return { score: 0, runId: runs[0].id, taskId: fallback.id, title: fallback.title };
+}
+
+function tokenize(value) {
+  return String(value || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2);
+}
+
+function truncate(value, max) {
+  const str = String(value || "");
+  return str.length > max ? `${str.slice(0, max - 1)}…` : str;
 }
 
 async function handleUserChat(message) {
