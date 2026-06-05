@@ -1,6 +1,13 @@
 export const config = {
   port: Number(process.env.PORT || 8787),
   appBaseUrl: process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 8787}`,
+  providers: {
+    voice: envList("VOICE_PROVIDER", ["twilio", "agentphone"]),
+    browser: envList("BROWSER_PROVIDER", ["playwright", "browserUse"]),
+    mail: envList("MAIL_PROVIDER", ["gmail", "agentmail"]),
+    memory: envList("MEMORY_PROVIDER", ["pgvector", "supermemory"]),
+    payments: envList("PAYMENT_PROVIDER", ["stripe", "sponge"])
+  },
   agentPhone: {
     apiKey: process.env.AGENTPHONE_API_KEY || "",
     agentId: process.env.AGENTPHONE_AGENT_ID || "",
@@ -30,6 +37,13 @@ export const config = {
     projectId: process.env.MOSS_PROJECT_ID || "",
     projectKey: process.env.MOSS_PROJECT_KEY || "",
     indexName: process.env.MOSS_INDEX_NAME || "gofer-dental-call"
+  },
+  pgvector: {
+    databaseUrl: process.env.PGVECTOR_DATABASE_URL || process.env.DATABASE_URL || ""
+  },
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY || "",
+    embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small"
   },
   sponge: {
     apiKey: process.env.SPONGE_API_KEY || ""
@@ -106,6 +120,15 @@ function envBool(name, defaultValue) {
   const value = process.env[name];
   if (value === undefined || value === "") return defaultValue;
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+function envList(name, defaultValue) {
+  const value = process.env[name];
+  if (value === undefined || value === "") return defaultValue;
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function normalizeBaseUrl(url) {
