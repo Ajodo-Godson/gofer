@@ -51,14 +51,18 @@ class PlaywrightBrowser extends Browser {
       );
     }
 
-    const launchOptions = { headless: true };
-    if (config.playwright.userDataDir) {
-      launchOptions.userDataDir = config.playwright.userDataDir;
-    }
-
-    let browser;
+    // launchPersistentContext persists cookies/storage across sessions; plain
+    // launch() does not accept userDataDir (it's a context-level concept).
+    let closeable;
+    let context;
     try {
-      browser = await chromium.launch(launchOptions);
+      if (config.playwright.userDataDir) {
+        closeable = await chromium.launchPersistentContext(config.playwright.userDataDir, { headless: true });
+        context = closeable;
+      } else {
+        closeable = await chromium.launch({ headless: true });
+        context = await closeable.newContext();
+      }
     } catch (error) {
       throw new AdapterError(
         "unavailable",
@@ -68,7 +72,6 @@ class PlaywrightBrowser extends Browser {
     }
 
     try {
-      const context = await browser.newContext();
       const page = await context.newPage();
 
       // Extract a URL from the prompt if present, otherwise use a default.
@@ -97,7 +100,7 @@ class PlaywrightBrowser extends Browser {
         blocker: null
       };
     } finally {
-      await browser.close().catch(() => null);
+      await closeable.close().catch(() => null);
     }
   }
 
