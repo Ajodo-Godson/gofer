@@ -41,7 +41,7 @@ class AgentPhoneVoiceCaller extends VoiceCaller {
       );
     }
 
-    const status = normalizeStatus(result.status);
+    const status = result.mode === "simulated" ? "completed" : normalizeStatus(result.status);
     return {
       callId: result.callId || result.data?.id || `sim-${Date.now()}`,
       status
@@ -57,8 +57,8 @@ class AgentPhoneVoiceCaller extends VoiceCaller {
       );
     }
 
-    if (!config.agentPhone.apiKey) {
-      // Demo/simulated: we stored no live call state, return a stub
+    if (!config.demo.allowRealCalls || !config.agentPhone.apiKey) {
+      // Demo/simulated: no live call state available, return a stub
       return {
         callId,
         outcome: "completed",

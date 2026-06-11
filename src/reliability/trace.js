@@ -110,9 +110,9 @@ class PgTracer {
     try {
       const { rowCount } = await this.#pool.query(
         `UPDATE errands
-         SET status = $2, updated_at = now()
+         SET status = $2, confirmed = $3, updated_at = now()
          WHERE errand_id = $1`,
-        [errandId, outcome]
+        [errandId, outcome, confirmed]
       );
       return { errandId, outcome, confirmed, updated: rowCount > 0 };
     } catch (error) {

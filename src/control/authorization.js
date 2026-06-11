@@ -32,6 +32,10 @@ class Authorization {
         return { allowed: false, reason: "missing capability" };
       }
 
+      if (!VALID_CAPABILITIES.has(capability)) {
+        return { allowed: false, reason: `unknown capability: ${capability}` };
+      }
+
       if (capability === "payments" && !actor) {
         return { allowed: false, reason: "payments capability requires actor" };
       }

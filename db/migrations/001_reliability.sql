@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS errands (
   template_id text,
   request     jsonb       DEFAULT '{}',
   status      text        NOT NULL DEFAULT 'pending',
+  confirmed   boolean     NOT NULL DEFAULT false,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -48,8 +49,6 @@ CREATE TABLE IF NOT EXISTS provider_memory (
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS provider_memory_provider_key_idx ON provider_memory (provider_key);
-
 -- ── outcomes ─────────────────────────────────────────────────────────────────
 -- Final result record for each errand.
 
@@ -62,7 +61,6 @@ CREATE TABLE IF NOT EXISTS outcomes (
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS outcomes_errand_id_idx   ON outcomes (errand_id);
 CREATE INDEX IF NOT EXISTS outcomes_recorded_at_idx ON outcomes (recorded_at);
 
 -- ── audit ─────────────────────────────────────────────────────────────────────

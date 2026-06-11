@@ -57,12 +57,11 @@ class AgentMailMailer extends Mailer {
       );
     }
 
-    if (!config.agentMail.apiKey) {
-      // Demo mode: no real messages to return
+    const inboxId = config.agentMail.inboxId || config.agentMail.from;
+    if (!config.demo.allowRealEmailSend || !config.agentMail.apiKey || !inboxId) {
+      // Demo/safety mode: no real messages to return
       return [];
     }
-
-    const inboxId = config.agentMail.inboxId || config.agentMail.from;
     let response;
     try {
       response = await fetch(

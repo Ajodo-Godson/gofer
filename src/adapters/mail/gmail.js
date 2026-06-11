@@ -3,8 +3,8 @@ import { AdapterError } from "../../interfaces/AdapterError.js";
 import { config } from "../../lib/config.js";
 
 export async function createMailer(options = {}) {
-  // Eagerly verify nodemailer is importable when credentials are configured.
-  if (config.gmail.user && config.gmail.appPassword) {
+  // Only verify nodemailer when live sending is enabled and credentials are set.
+  if (config.demo.allowRealEmailSend && config.gmail.user && config.gmail.appPassword) {
     try {
       await import("nodemailer");
     } catch {
@@ -42,8 +42,8 @@ class GmailMailer extends Mailer {
       );
     }
 
-    // Simulation mode: no credentials configured.
-    if (!config.gmail.user || !config.gmail.appPassword) {
+    // Simulation mode: safety toggle off or no credentials configured.
+    if (!config.demo.allowRealEmailSend || !config.gmail.user || !config.gmail.appPassword) {
       const threadId = mail.threadId || `sim-thread-${Date.now()}`;
       return {
         messageId: `sim-${Date.now()}`,
@@ -115,9 +115,16 @@ class GmailMailer extends Mailer {
       );
     }
 
-    // TODO: Implement IMAP polling using the `imap` npm package when it is
-    // added to package.json. For now, return an empty array in simulation mode
-    // since `imap` is not yet a declared dependency.
-    return [];
+    // Simulation mode: no credentials or live sending disabled.
+    if (!config.demo.allowRealEmailSend || !config.gmail.user || !config.gmail.appPassword) {
+      return [];
+    }
+
+    // Real mode: IMAP polling is not yet implemented.
+    throw new AdapterError(
+      "unavailable",
+      "gmail poll() requires IMAP support which is not yet implemented.",
+      { provider: "gmail" }
+    );
   }
 }

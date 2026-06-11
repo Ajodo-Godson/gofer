@@ -17,7 +17,7 @@
  * Secret: APPROVAL_TOKEN_SECRET environment variable.
  */
 
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 const TOKEN_TTL_SECONDS = 3600;
 
@@ -105,10 +105,10 @@ class Gates {
       const expectedSig = hmacSign(encodedPayload, secret);
       const expectedEncoded = toBase64url(expectedSig);
 
-      // Constant-time comparison via timing-safe approach using string equality
-      // (for full security a timingSafeEqual would be used on Buffer, but the
-      // token is public-facing and HMAC-hex encoded — either way we compare)
-      if (encodedSig !== expectedEncoded) return false;
+      // Constant-time comparison prevents timing-based signature oracle attacks.
+      const a = Buffer.from(encodedSig);
+      const b = Buffer.from(expectedEncoded);
+      if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
 
       // Decode and parse payload
       const payloadStr = fromBase64url(encodedPayload);

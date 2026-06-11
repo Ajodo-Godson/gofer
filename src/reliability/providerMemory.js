@@ -79,19 +79,16 @@ class PgProviderMemory {
     }
 
     try {
-      // Read current profile, merge, write back.
-      const existing = await this.recallProvider(providerKey);
-      const merged = Object.assign({}, existing, delta);
-
-      await this.#pool.query(
+      const { rows } = await this.#pool.query(
         `INSERT INTO provider_memory (provider_key, profile, updated_at)
-         VALUES ($1, $2, now())
+         VALUES ($1, $2::jsonb, now())
          ON CONFLICT (provider_key)
-         DO UPDATE SET profile = $2, updated_at = now()`,
-        [providerKey, JSON.stringify(merged)]
+         DO UPDATE SET profile = provider_memory.profile || $2::jsonb, updated_at = now()
+         RETURNING profile`,
+        [providerKey, JSON.stringify(delta)]
       );
 
-      return merged;
+      return rows[0].profile;
     } catch (error) {
       if (error instanceof AdapterError) throw error;
       throw new AdapterError("unknown", `updateProvider failed: ${error.message}`, {
