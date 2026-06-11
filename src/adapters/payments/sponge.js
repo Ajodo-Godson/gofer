@@ -1,6 +1,5 @@
 import { Payments } from "../../interfaces/Payments.js";
 import { AdapterError } from "../../interfaces/AdapterError.js";
-import { config } from "../../lib/config.js";
 import { requirePaymentApproval } from "../../integrations/payments.js";
 
 export async function createPayments() {
@@ -48,8 +47,8 @@ class SpongePayments extends Payments {
     let result;
     try {
       result = await requirePaymentApproval({
-        amount: intentId,
-        description: intentId,
+        amount: null,
+        description: `Payment intent ${intentId}`,
         approvalToken
       });
     } catch (error) {
