@@ -15,6 +15,12 @@ export const config = {
     webhookSecret: process.env.AGENTPHONE_WEBHOOK_SECRET || "",
     baseUrl: normalizeAgentPhoneBaseUrl(process.env.AGENTPHONE_BASE_URL || "https://api.agentphone.to/v1")
   },
+  twilio: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID || "",
+    authToken: process.env.TWILIO_AUTH_TOKEN || "",
+    fromNumber: process.env.TWILIO_FROM_NUMBER || "",
+    statusCallbackUrl: process.env.TWILIO_STATUS_CALLBACK_URL || ""
+  },
   browserUse: {
     apiKey: process.env.BROWSER_USE_API_KEY || "",
     baseUrl: normalizeBaseUrl(process.env.BROWSER_USE_API_BASE_URL || "https://api.browser-use.com/api/v1"),
