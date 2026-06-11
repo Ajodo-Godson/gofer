@@ -28,8 +28,8 @@ class Audit {
   }
 
   /**
-   * Appends one audit event row. Never throws on validation errors — wraps
-   * unexpected DB failures as AdapterError.
+   * Appends one audit event row. Throws AdapterError('invalid') when eventType
+   * is missing; wraps unexpected DB failures as AdapterError('unknown').
    *
    * @param {{ errandId?: string, eventType: string, actor?: string, detail?: object }} event
    * @returns {Promise<void>}
