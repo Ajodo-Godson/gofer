@@ -179,16 +179,9 @@ describe("createProviderMemory", () => {
   });
 
   it("updateProvider merges delta into existing profile (Object.assign semantics)", async () => {
-    // First query (SELECT/recall) returns existing profile; second (INSERT/upsert) succeeds.
-    let callCount = 0;
+    // Single atomic upsert returns merged profile via RETURNING clause.
     const pool = {
-      query: async () => {
-        callCount++;
-        if (callCount === 1) {
-          return { rows: [{ profile: { a: 1, b: 2 } }], rowCount: 1 };
-        }
-        return { rows: [], rowCount: 1 };
-      }
+      query: async () => ({ rows: [{ profile: { a: 1, b: 99, c: 3 } }], rowCount: 1 })
     };
     const mem = createProviderMemory(pool);
     const merged = await mem.updateProvider("agentphone", { b: 99, c: 3 });
@@ -196,13 +189,8 @@ describe("createProviderMemory", () => {
   });
 
   it("updateProvider creates a new profile when none exists", async () => {
-    let callCount = 0;
     const pool = {
-      query: async () => {
-        callCount++;
-        if (callCount === 1) return { rows: [], rowCount: 0 };
-        return { rows: [], rowCount: 1 };
-      }
+      query: async () => ({ rows: [{ profile: { score: 42 } }], rowCount: 1 })
     };
     const mem = createProviderMemory(pool);
     const merged = await mem.updateProvider("new-provider", { score: 42 });
