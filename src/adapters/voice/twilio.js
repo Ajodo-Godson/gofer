@@ -4,9 +4,9 @@ import { config } from "../../lib/config.js";
 
 const E164_RE = /^\+[1-9]\d{7,14}$/;
 
-// Simulation mode: no credentials set
+// Simulation mode: safety toggle off, or credentials not present
 function isSimulationMode() {
-  return !config.twilio.accountSid || !config.twilio.authToken;
+  return !config.demo.allowRealCalls || !config.twilio.accountSid || !config.twilio.authToken;
 }
 
 // XML-escape special characters before embedding in TwiML
@@ -124,6 +124,15 @@ class TwilioVoiceCaller extends VoiceCaller {
     }
 
     const { accountSid, authToken, fromNumber, statusCallbackUrl } = config.twilio;
+
+    if (!E164_RE.test(fromNumber)) {
+      throw new AdapterError(
+        "invalid",
+        `config.twilio.fromNumber must be in E.164 format. Got: ${fromNumber}`,
+        { provider: "twilio", errandId: req?.errandId }
+      );
+    }
+
     const client = twilio(accountSid, authToken);
 
     let call;
