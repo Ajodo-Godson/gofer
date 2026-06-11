@@ -31,6 +31,14 @@ export const config = {
     projectKey: process.env.MOSS_PROJECT_KEY || "",
     indexName: process.env.MOSS_INDEX_NAME || "gofer-dental-call"
   },
+  playwright: {
+    enabled: envBool("PLAYWRIGHT_ENABLED", false),
+    userDataDir: process.env.PLAYWRIGHT_USER_DATA_DIR || ""
+  },
+  gmail: {
+    user: process.env.GMAIL_USER || "",
+    appPassword: process.env.GMAIL_APP_PASSWORD || ""
+  },
   sponge: {
     apiKey: process.env.SPONGE_API_KEY || ""
   },
