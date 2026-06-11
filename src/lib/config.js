@@ -45,6 +45,14 @@ export const config = {
     apiKey: process.env.OPENAI_API_KEY || "",
     embeddingModel: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small"
   },
+  playwright: {
+    enabled: envBool("PLAYWRIGHT_ENABLED", false),
+    userDataDir: process.env.PLAYWRIGHT_USER_DATA_DIR || ""
+  },
+  gmail: {
+    user: process.env.GMAIL_USER || "",
+    appPassword: process.env.GMAIL_APP_PASSWORD || ""
+  },
   sponge: {
     apiKey: process.env.SPONGE_API_KEY || ""
   },
