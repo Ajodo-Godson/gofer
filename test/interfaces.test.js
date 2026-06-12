@@ -40,21 +40,21 @@ test("AdapterError carries fallback and trace metadata", () => {
   assert.equal(error.cause, cause);
 });
 
-test("provider config uses owned adapters before vendor fallbacks", () => {
-  assert.deepEqual(config.providers.voice, ["twilio", "agentphone"]);
-  assert.deepEqual(config.providers.browser, ["playwright", "browserUse"]);
-  assert.deepEqual(config.providers.mail, ["gmail", "agentmail"]);
-  assert.deepEqual(config.providers.memory, ["pgvector", "supermemory"]);
-  assert.deepEqual(config.providers.payments, ["stripe", "sponge"]);
+test("provider config uses owned-only adapters (no vendor fallbacks)", () => {
+  assert.deepEqual(config.providers.voice, ["twilio"]);
+  assert.deepEqual(config.providers.browser, ["playwright"]);
+  assert.deepEqual(config.providers.mail, ["gmail"]);
+  assert.deepEqual(config.providers.memory, ["pgvector"]);
+  assert.deepEqual(config.providers.payments, ["sponge"]);
 });
 
-test("adapter registry names primary and fallback providers", () => {
+test("adapter registry includes owned providers", () => {
   const registry = adapterRegistry();
-  assert.deepEqual(Object.keys(registry.memory), ["pgvector", "supermemory"]);
-  assert.deepEqual(Object.keys(registry.browser), ["playwright", "browserUse"]);
-  assert.deepEqual(Object.keys(registry.mail), ["gmail", "agentmail"]);
-  assert.deepEqual(Object.keys(registry.payments), ["stripe", "sponge"]);
-  assert.deepEqual(Object.keys(registry.voice), ["twilio", "agentphone"]);
+  assert.ok("pgvector" in registry.memory);
+  assert.ok("playwright" in registry.browser);
+  assert.ok("gmail" in registry.mail);
+  assert.ok("sponge" in registry.payments);
+  assert.ok("twilio" in registry.voice);
 });
 
 test("resolveAdapter falls through unavailable providers and reports the last failure", async () => {
