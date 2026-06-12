@@ -31,6 +31,10 @@ export const config = {
     enabled: envBool("PLAYWRIGHT_ENABLED", false),
     userDataDir: process.env.PLAYWRIGHT_USER_DATA_DIR || ""
   },
+  ollama: {
+    baseUrl: normalizeBaseUrl(process.env.OLLAMA_BASE_URL || "http://localhost:11434"),
+    model: process.env.OLLAMA_MODEL || "llama3.1"
+  },
   gmail: {
     user: process.env.GMAIL_USER || "",
     appPassword: process.env.GMAIL_APP_PASSWORD || ""
